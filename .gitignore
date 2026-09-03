@@ -1,0 +1,9 @@
+.DS_Store
+.build/
+.build-warnings/
+.venv/
+dist/
+docs/superpowers/
+__pycache__/
+*.py[cod]
+.pytest_cache/

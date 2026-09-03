@@ -1,0 +1,1 @@
+bluetti-bt-lib @ git+https://github.com/Patrick762/bluetti-bt-lib.git@0e11a80484a1c89a992189df050328387b0d1277
