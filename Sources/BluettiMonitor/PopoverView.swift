@@ -36,6 +36,7 @@ struct PopoverView: View {
             bluetooth: model.bluetooth,
             connection: model.connection,
             power: model.power,
+            powerConfirmedInCurrentSession: model.powerConfirmedInCurrentSession,
             freshness: model.freshness,
             snapshot: model.snapshot,
             presentation: model.presentation,

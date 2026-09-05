@@ -29,6 +29,7 @@ struct PopoverViewState {
     let bluetooth: BluetoothAvailability
     let connection: DeviceConnectionState
     let power: ExternalPowerState
+    let powerConfirmedInCurrentSession: Bool
     let freshness: DataFreshness
     let snapshot: DeviceSnapshot
     let presentation: StatusPresentation
@@ -104,7 +105,7 @@ struct PopoverContentView: View {
             case .normal:
                 serviceHeader
                 NormalMonitorView(state: state, actions: actions)
-                    .padding(.top, 20)
+                    .padding(.top, 15)
             case .setup:
                 serviceHeader
                 SetupView(state: state, actions: actions)
@@ -139,8 +140,9 @@ struct PopoverContentView: View {
 
             Text(state.deviceName)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
+                .layoutPriority(1)
 
             if let identity = state.deviceIdentity {
                 Text(identity)
@@ -150,6 +152,7 @@ struct PopoverContentView: View {
                     .padding(.vertical, 2)
                     .background(Color.primary.opacity(0.055), in: Capsule())
                     .lineLimit(1)
+                    .truncationMode(.middle)
             }
 
             Spacer(minLength: 10)
@@ -210,24 +213,27 @@ private struct NormalMonitorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: MonitorStyle.sectionSpacing) {
-            MonitoringStatusView(state: state, actions: actions)
+            if state.presentation.tone != .good {
+                MonitoringStatusView(state: state, actions: actions)
+            }
 
             EnergyFlowView(
                 snapshot: state.snapshot,
                 presentation: state.presentation,
                 power: state.power,
+                powerConfirmedInCurrentSession: state.powerConfirmedInCurrentSession,
                 freshness: state.freshness,
-                batteryVisualState: state.batteryVisualState,
-                isVisible: state.isVisible && state.animationsEnabled
+                batteryVisualState: state.batteryVisualState
             )
 
             NotificationReadinessView(state: state, actions: actions)
 
-            Divider()
-            Text(updateText)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if !state.notificationReadiness.canScheduleMonitoringAlerts || state.notificationActionResult != nil {
+                Text(updateText)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -244,48 +250,65 @@ private struct MonitoringStatusView: View {
     let actions: PopoverActions
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            ZStack {
-                Circle().fill(statusColor.opacity(0.14))
-                Image(systemName: statusSymbol)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(statusColor)
-            }
-            .frame(width: 50, height: 50)
-            .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(statusTitle)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(state.presentation.title)
-                    .font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+            Text(statusSubtitle)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-                Text(statusSubtitle)
-                    .font(.system(size: 13))
+            if let detail = state.monitoringDetail, !detail.isEmpty {
+                Text(detail)
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-
-                if let detail = state.monitoringDetail, !detail.isEmpty {
-                    Text(detail)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let recovery = state.monitoringRecovery {
-                    Button(recoveryLabel(recovery)) {
-                        perform(recovery)
-                    }
-                    .buttonStyle(.link)
-                    .font(.system(size: 12, weight: .medium))
-                    .padding(.top, 1)
-                }
             }
+
+            if let recovery = state.monitoringRecovery {
+                Button(recoveryLabel(recovery)) {
+                    perform(recovery)
+                }
+                .buttonStyle(.link)
+                .font(.system(size: 12, weight: .medium))
+                .padding(.top, 1)
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.leading, 28)
+        .padding(.trailing, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(statusColor.opacity(0.085), in: RoundedRectangle(cornerRadius: MonitorStyle.sectionRadius))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(statusColor)
+                .frame(width: 4)
+                .padding(.vertical, 10)
+                .padding(.leading, 12)
+                .accessibilityHidden(true)
         }
         .accessibilityElement(children: .combine)
     }
 
+    private var statusTitle: String {
+        guard state.batteryVisualState == .warning,
+              let percent = state.snapshot.batteryPercent
+        else {
+            return state.presentation.title
+        }
+        return percent <= 10 ? "Критический заряд" : "Низкий заряд"
+    }
+
     private var statusSubtitle: String {
+        if state.batteryVisualState == .warning {
+            let elapsed = state.outageStartedAt.map { elapsedText(since: $0, now: state.now) }
+            let outage = elapsed.map { "Сеть отключена · \($0)" } ?? "Сеть отключена"
+            return state.snapshot.batteryPercent.map { $0 <= 10 ? "\(outage) · сохраните работу" : outage }
+                ?? outage
+        }
         guard state.power == .offline, let startedAt = state.outageStartedAt else {
             return state.presentation.subtitle
         }
@@ -293,16 +316,13 @@ private struct MonitoringStatusView: View {
     }
 
     private var statusColor: Color {
-        MonitorStyle.color(for: state.presentation.tone)
-    }
-
-    private var statusSymbol: String {
-        switch state.presentation.tone {
-        case .good: "checkmark"
-        case .warning: "bolt"
-        case .unavailable: "link.badge.plus"
-        case .neutral: "ellipsis"
+        if state.batteryVisualState == .warning,
+           let percent = state.snapshot.batteryPercent,
+           percent <= 10
+        {
+            return .red
         }
+        return MonitorStyle.color(for: state.presentation.tone)
     }
 
     private func recoveryLabel(_ action: MonitoringRecoveryAction) -> String {
@@ -331,14 +351,39 @@ private struct NotificationReadinessView: View {
            state.notificationReadiness.canScheduleMonitoringAlerts,
            state.notificationActionResult == nil
         {
-            Label("Уведомления готовы", systemImage: "bell.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .labelStyle(.titleAndIcon)
-                .padding(.horizontal, 2)
+            Button(action: actions.showSettings) {
+                HStack(spacing: 6) {
+                    Image(systemName: "bell.badge.fill")
+                        .font(.system(size: 10))
+                    Text(healthyFooterText)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 6)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("\(healthyFooterText). Открыть настройки")
         } else {
             fullReadiness
         }
+    }
+
+    private var healthyFooterText: String {
+        let freshness: String
+        if state.freshness == .fresh {
+            freshness = "Данные актуальны"
+        } else if let lastUpdate = state.lastUpdate {
+            freshness = "Последние данные \(elapsedText(since: lastUpdate, now: state.now)) назад"
+        } else {
+            freshness = "Данных пока нет"
+        }
+        return "\(freshness) · уведомления включены"
     }
 
     private var fullReadiness: some View {

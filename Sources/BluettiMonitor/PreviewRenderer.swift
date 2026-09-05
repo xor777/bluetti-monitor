@@ -203,6 +203,8 @@ private struct PreviewFixture {
 
         func make(
             screen: PopoverScreen = .normal,
+            deviceName: String = "Premium 100 V2",
+            deviceIdentity: String = "HOME-41",
             bluetooth: BluetoothAvailability = .poweredOn,
             connection: DeviceConnectionState = .connected,
             power: ExternalPowerState = .online,
@@ -243,11 +245,12 @@ private struct PreviewFixture {
             ))
             return PopoverViewState(
                 screen: screen,
-                deviceName: "Premium 100 V2",
-                deviceIdentity: selectedID == nil ? nil : "HOME-41",
+                deviceName: deviceName,
+                deviceIdentity: selectedID == nil ? nil : deviceIdentity,
                 bluetooth: bluetooth,
                 connection: connection,
                 power: power,
+                powerConfirmedInCurrentSession: powerConfirmed,
                 freshness: freshness,
                 snapshot: snapshot,
                 presentation: presentation,
@@ -273,6 +276,52 @@ private struct PreviewFixture {
 
         return [
             PreviewFixture(name: "healthy", state: make()),
+            PreviewFixture(
+                name: "full-power",
+                state: make(
+                    snapshot: DeviceSnapshot(
+                        model: "PR100V2",
+                        batteryPercent: 100,
+                        acInputVoltage: 230,
+                        acInputPower: 2000,
+                        acOutputPower: 1800
+                    )
+                )
+            ),
+            PreviewFixture(
+                name: "critical-backup",
+                state: make(
+                    power: .offline,
+                    snapshot: DeviceSnapshot(
+                        model: "PR100V2",
+                        batteryPercent: 8,
+                        acInputVoltage: 0,
+                        acInputPower: 0,
+                        acOutputPower: 412
+                    ),
+                    batteryState: .warning,
+                    outageStartedAt: now.addingTimeInterval(-26 * 60)
+                )
+            ),
+            PreviewFixture(
+                name: "long-identity",
+                state: make(deviceIdentity: "LIVING-ROOM-BACKUP-STATION-41")
+            ),
+            PreviewFixture(
+                name: "reconnect-unconfirmed",
+                state: make(
+                    connection: .connected,
+                    power: .online,
+                    snapshot: DeviceSnapshot(
+                        model: "PR100V2",
+                        batteryPercent: 77,
+                        acInputVoltage: 230,
+                        acInputPower: 0,
+                        acOutputPower: 126
+                    ),
+                    powerConfirmed: false
+                )
+            ),
             PreviewFixture(
                 name: "backup",
                 state: make(
