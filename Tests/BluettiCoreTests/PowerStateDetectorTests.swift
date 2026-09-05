@@ -44,5 +44,21 @@ func powerStateDetectorTests() -> [TestCase] {
             try expectNil(detector.observe(voltage: 0))
             try expectEqual(detector.confirmedState, .online)
         }),
+        ("new monitoring session requires fresh confirmation before reusing old state", {
+            var detector = PowerStateDetector(previousConfirmed: .offline)
+            detector.beginMonitoringSession()
+            try expectNil(detector.currentSessionConfirmedState)
+            try expectNil(detector.observe(voltage: 0))
+            try expectNil(detector.currentSessionConfirmedState)
+            try expectNil(detector.observe(voltage: 0))
+            try expectEqual(detector.confirmedState, .offline)
+            try expectEqual(detector.currentSessionConfirmedState, .offline)
+        }),
+        ("device reset clears confirmed power state", {
+            var detector = PowerStateDetector(previousConfirmed: .offline)
+            detector.reset()
+            try expectEqual(detector.confirmedState, .unknown)
+            try expectNil(detector.currentSessionConfirmedState)
+        }),
     ]
 }

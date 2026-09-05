@@ -25,10 +25,24 @@ func statusPresentationTests() -> [TestCase] {
                 connection: .connected,
                 power: .online,
                 freshness: .fresh,
+                powerConfirmedInCurrentSession: true,
                 outputPower: 94
             ))
             try expectEqual(status.title, "Сеть подключена")
-            try expectEqual(status.subtitle, "Всё работает")
+            try expectEqual(status.subtitle, "Мониторинг активен")
+        }),
+        ("fresh telemetry waits for current-session power confirmation", {
+            let status = StatusPresentation.make(.init(
+                bluetooth: .poweredOn,
+                connection: .connected,
+                power: .offline,
+                freshness: .fresh,
+                powerConfirmedInCurrentSession: false,
+                outputPower: 94
+            ))
+            try expectEqual(status.title, "Получение данных")
+            try expectEqual(status.subtitle, "Проверяем питание")
+            try expectEqual(status.outputFlowActive, false)
         }),
         ("offline under load is backup power", {
             let status = StatusPresentation.make(.init(
@@ -36,6 +50,7 @@ func statusPresentationTests() -> [TestCase] {
                 connection: .connected,
                 power: .offline,
                 freshness: .fresh,
+                powerConfirmedInCurrentSession: true,
                 outputPower: 94
             ))
             try expectEqual(status.title, "Резервное питание")
@@ -48,6 +63,7 @@ func statusPresentationTests() -> [TestCase] {
                 connection: .connected,
                 power: .offline,
                 freshness: .fresh,
+                powerConfirmedInCurrentSession: true,
                 outputPower: 0
             ))
             try expectEqual(status.title, "Сеть отключена")

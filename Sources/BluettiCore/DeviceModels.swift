@@ -28,6 +28,26 @@ public enum DataFreshness: Equatable, Sendable {
     case lost
 }
 
+public enum NotificationHealth: Equatable, Sendable {
+    case unknown
+    case notDetermined
+    case denied
+    case alertsDisabled
+    case available
+
+    public var canScheduleMonitoringAlerts: Bool {
+        self == .available
+    }
+
+    public var needsAuthorizationRequest: Bool {
+        self == .notDetermined
+    }
+
+    public var needsSystemSettings: Bool {
+        self == .denied || self == .alertsDisabled
+    }
+}
+
 public struct TelemetryPatch: Equatable, Sendable {
     public var model: String?
     public var batteryPercent: Int?
@@ -77,5 +97,12 @@ public struct DeviceSnapshot: Equatable, Sendable {
         if let acInputVoltage = patch.acInputVoltage { self.acInputVoltage = acInputVoltage }
         if let acInputPower = patch.acInputPower { self.acInputPower = acInputPower }
         if let acOutputPower = patch.acOutputPower { self.acOutputPower = acOutputPower }
+    }
+
+    public mutating func clearTelemetryForNewSession() {
+        batteryPercent = nil
+        acInputVoltage = nil
+        acInputPower = nil
+        acOutputPower = nil
     }
 }

@@ -14,5 +14,22 @@ func deviceModelTests() -> [TestCase] {
             try expectEqual(snapshot.acInputPower, 96)
             try expectEqual(snapshot.acOutputPower, 94)
         }),
+        ("new monitoring session keeps model identity but clears telemetry", {
+            var snapshot = DeviceSnapshot(
+                model: "PR100V2",
+                batteryPercent: 18,
+                acInputVoltage: 230,
+                acInputPower: 120,
+                acOutputPower: 96
+            )
+
+            snapshot.clearTelemetryForNewSession()
+
+            try expectEqual(snapshot.model, "PR100V2")
+            try expectNil(snapshot.batteryPercent)
+            try expectNil(snapshot.acInputVoltage)
+            try expectNil(snapshot.acInputPower)
+            try expectNil(snapshot.acOutputPower)
+        }),
     ]
 }

@@ -4,143 +4,163 @@ import SwiftUI
 
 struct PopoverView: View {
     @ObservedObject var model: AppModel
-
-    private let accent = Color(red: 0.25, green: 0.82, blue: 0.57)
+    @State private var route: PopoverScreen = .normal
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            status
-                .padding(.top, 24)
-            EnergyFlowView(
-                snapshot: model.snapshot,
-                presentation: model.presentation,
-                isVisible: model.isPopoverVisible
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            PopoverContentView(
+                state: makeState(now: timeline.date),
+                actions: actions
             )
-            .padding(.top, 16)
-            footer
-                .padding(.top, 13)
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 17)
-        .padding(.bottom, 15)
-        .frame(width: 440, height: 330, alignment: .topLeading)
-        .background(.regularMaterial)
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(model.connection == .connected ? accent : Color.secondary.opacity(0.55))
-                .frame(width: 9, height: 9)
-                .shadow(color: model.connection == .connected ? accent.opacity(0.42) : .clear, radius: 5)
-                .accessibilityHidden(true)
-            Text(model.deviceName)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer(minLength: 12)
-            Menu {
-                Button("Проверить уведомление") { model.testNotification() }
-                Button("Скопировать диагностику") { model.copyDiagnostics() }
-                Divider()
-                Button("О приложении") { NSApp.orderFrontStandardAboutPanel(nil) }
-                Divider()
-                Button("Выйти из приложения") { NSApp.terminate(nil) }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 26, height: 22)
-                    .contentShape(Rectangle())
+        .onChange(of: model.isPopoverVisible) { visible in
+            guard !visible else { return }
+            if model.canCancelDeviceSelection {
+                model.cancelDeviceSelection()
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .accessibilityLabel("Действия")
+            route = .normal
         }
     }
 
-    private var status: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(statusColor.opacity(0.14))
-                Image(systemName: statusSymbol)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(statusColor)
-            }
-            .frame(width: 50, height: 50)
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(model.presentation.title)
-                    .font(.system(size: 25, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-                Text(model.presentation.subtitle)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+    private func makeState(now: Date) -> PopoverViewState {
+        let selectedCandidate = model.stationCandidates.first {
+            $0.id == model.selectedPeripheralID
         }
-        .accessibilityElement(children: .combine)
+        let deviceIdentity = selectedCandidate?.displayIdentity
+            ?? model.selectedPeripheralID.map(shortIdentity)
+
+        return PopoverViewState(
+            screen: resolvedScreen,
+            deviceName: model.deviceName,
+            deviceIdentity: deviceIdentity,
+            bluetooth: model.bluetooth,
+            connection: model.connection,
+            power: model.power,
+            freshness: model.freshness,
+            snapshot: model.snapshot,
+            presentation: model.presentation,
+            batteryVisualState: model.lowBatteryVisualState,
+            monitoringDetail: monitoringDetail,
+            monitoringRecovery: monitoringRecovery,
+            notificationReadiness: model.notificationReadiness,
+            notificationActionResult: model.notificationActionResult,
+            lastUpdate: model.lastUpdate,
+            outageStartedAt: model.outageStartedAt,
+            now: now,
+            isVisible: model.isPopoverVisible,
+            animationsEnabled: true,
+            selectedID: model.selectedPeripheralID,
+            stationCandidates: model.stationCandidates.map { candidate in
+                PopoverStationChoice(
+                    id: candidate.id,
+                    name: stationName(candidate.advertisedName),
+                    identity: candidate.displayIdentity,
+                    isCurrent: candidate.id == model.selectedPeripheralID
+                )
+            },
+            selectionMode: model.stationSelection.mode,
+            canCancelDeviceSelection: model.canCancelDeviceSelection,
+            loginItemStatus: model.loginItemStatus,
+            loginItemError: model.loginItemError,
+            launchAtLogin: model.launchAtLoginToggleValue
+        )
     }
 
-    private var footer: some View {
-        VStack(spacing: 11) {
-            Divider()
-            HStack(spacing: 10) {
-                TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                    Text(updateText(at: timeline.date))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+    private var resolvedScreen: PopoverScreen {
+        switch route {
+        case .chooser, .settings:
+            return route
+        case .normal, .setup:
+            if !model.isFirstRunComplete { return .setup }
+            if model.isSelectingDevice { return .chooser }
+            return .normal
+        }
+    }
+
+    private var monitoringRecovery: MonitoringRecoveryAction? {
+        switch model.bluetooth {
+        case .unauthorized, .poweredOff:
+            return .openBluetoothSettings
+        case .unknown, .resetting, .unsupported:
+            return nil
+        case .poweredOn:
+            break
+        }
+
+        if model.connection == .disconnected { return .reconnect }
+        if model.connection == .scanning, model.scanningFor >= 10 { return .chooseDevice }
+        return nil
+    }
+
+    private var actions: PopoverActions {
+        PopoverActions(
+            showMain: {
+                if model.canCancelDeviceSelection { model.cancelDeviceSelection() }
+                route = .normal
+            },
+            showSettings: { route = .settings },
+            startMonitoring: { model.startMonitoring() },
+            beginDeviceSelection: {
+                model.startMonitoring()
+                route = .chooser
+                if !model.isSelectingDevice { model.beginDeviceSelection() }
+            },
+            cancelDeviceSelection: {
+                if model.canCancelDeviceSelection { model.cancelDeviceSelection() }
+                route = .normal
+            },
+            rescanDevices: { model.rescanDevices() },
+            selectDevice: { id in
+                model.selectDevice(id)
+                route = .normal
+            },
+            reconnect: { model.reconnectAction?() },
+            openBluetoothSettings: { model.openBluetoothSettingsAction?() },
+            performNotificationAction: { action in
+                switch action {
+                case .none:
+                    break
+                case .refresh:
+                    Task { await model.refreshNotificationHealth() }
+                case .requestAuthorization:
+                    model.requestNotificationAuthorization()
+                case .openSystemSettings:
+                    model.openNotificationSettings()
                 }
-                Spacer(minLength: 8)
-                contextualAction
-            }
-        }
+            },
+            testNotification: { model.testNotification() },
+            clearNotificationResult: { model.clearNotificationActionResult() },
+            setLaunchAtLogin: { enabled in model.setLaunchAtLogin(enabled) },
+            openLoginItemSettings: { model.openLoginItemSettings() },
+            completeFirstRun: {
+                model.completeFirstRun()
+                route = .normal
+            },
+            copyDiagnostics: { model.copyDiagnostics() },
+            showAbout: { NSApp.orderFrontStandardAboutPanel(nil) },
+            quit: { NSApp.terminate(nil) }
+        )
     }
 
-    @ViewBuilder
-    private var contextualAction: some View {
-        if model.notificationHealth == .unavailable {
-            Button("Включить уведомления") { model.notifications.openSettings() }
-                .buttonStyle(.link)
-                .font(.system(size: 12))
-        } else if model.bluetooth == .unauthorized || model.bluetooth == .poweredOff {
-            Button("Открыть настройки") { model.openBluetoothSettingsAction?() }
-                .buttonStyle(.link)
-                .font(.system(size: 12))
-        } else if model.connection == .disconnected {
-            Button("Переподключить") { model.reconnectAction?() }
-                .buttonStyle(.link)
-                .font(.system(size: 12))
-        }
+    private func stationName(_ advertisedName: String) -> String {
+        advertisedName.uppercased().hasPrefix("PR100V2")
+            ? "Premium 100 V2"
+            : (advertisedName.isEmpty ? "Premium 100 V2" : advertisedName)
     }
 
-    private var statusColor: Color {
-        switch model.presentation.tone {
-        case .good: accent
-        case .warning: .orange
-        case .unavailable: .secondary
-        case .neutral: .secondary
+    private var monitoringDetail: String? {
+        guard model.connection != .connected || model.freshness != .fresh,
+              model.bluetooth == .poweredOn,
+              model.connection == .disconnected,
+              model.lastError?.localizedCaseInsensitiveContains("BLUETTI") == true
+        else {
+            return nil
         }
+        return "Проверьте, не подключено ли приложение BLUETTI на телефоне"
     }
 
-    private var statusSymbol: String {
-        switch model.presentation.tone {
-        case .good: "checkmark"
-        case .warning: "bolt"
-        case .unavailable: "link.badge.plus"
-        case .neutral: "ellipsis"
-        }
-    }
-
-    private func updateText(at now: Date) -> String {
-        guard let lastUpdate = model.lastUpdate else { return "Ожидаем данные" }
-        let age = max(0, Int(now.timeIntervalSince(lastUpdate)))
-        if age < 2 { return "Обновлено сейчас" }
-        if model.freshness != .fresh { return "Данные устарели · \(age) сек." }
-        return "Обновлено \(age) сек. назад"
+    private func shortIdentity(_ id: UUID) -> String {
+        let raw = id.uuidString
+        return "\(raw.prefix(4))…\(raw.suffix(4))"
     }
 }

@@ -5,6 +5,7 @@ public struct StatusContext: Equatable, Sendable {
     public var connection: DeviceConnectionState
     public var power: ExternalPowerState
     public var freshness: DataFreshness
+    public var powerConfirmedInCurrentSession: Bool
     public var scanningFor: TimeInterval
     public var inputPower: Int?
     public var outputPower: Int?
@@ -14,6 +15,7 @@ public struct StatusContext: Equatable, Sendable {
         connection: DeviceConnectionState = .disconnected,
         power: ExternalPowerState = .unknown,
         freshness: DataFreshness = .lost,
+        powerConfirmedInCurrentSession: Bool = false,
         scanningFor: TimeInterval = 0,
         inputPower: Int? = nil,
         outputPower: Int? = nil
@@ -22,6 +24,7 @@ public struct StatusContext: Equatable, Sendable {
         self.connection = connection
         self.power = power
         self.freshness = freshness
+        self.powerConfirmedInCurrentSession = powerConfirmedInCurrentSession
         self.scanningFor = scanningFor
         self.inputPower = inputPower
         self.outputPower = outputPower
@@ -78,12 +81,15 @@ public struct StatusPresentation: Equatable, Sendable {
         if context.freshness == .lost {
             return inactive("Нет связи", "Переподключаемся", .unavailable)
         }
+        guard context.powerConfirmedInCurrentSession else {
+            return inactive("Получение данных", "Проверяем питание", .neutral)
+        }
 
         switch context.power {
         case .online:
             return StatusPresentation(
                 title: "Сеть подключена",
-                subtitle: "Всё работает",
+                subtitle: "Мониторинг активен",
                 tone: .good,
                 inputFlowActive: (context.inputPower ?? 0) > 1,
                 outputFlowActive: (context.outputPower ?? 0) > 1

@@ -4,17 +4,25 @@ import BluettiCore
 import Foundation
 import OSLog
 
-enum NotificationHealth: Equatable, Sendable {
-    case unknown
-    case available
-    case unavailable
+@MainActor
+protocol NotificationServicing: AnyObject {
+    var healthChanged: ((NotificationHealth) -> Void)? { get set }
+    var schedulingFailed: ((String) -> Void)? { get set }
+
+    func prepare() async
+    func requestAuthorization() async throws -> NotificationHealth
+    func refreshHealth() async
+    func deliver(_ event: NotificationEvent)
+    func schedule(_ event: NotificationEvent) async throws
+    func openSettings()
 }
 
 @MainActor
-final class NotificationService: NSObject {
+final class NotificationService: NSObject, NotificationServicing {
     private let center = UNUserNotificationCenter.current()
     private let logger = Logger(subsystem: "com.dmitry.bluetti-monitor", category: "Notifications")
     var healthChanged: ((NotificationHealth) -> Void)?
+    var schedulingFailed: ((String) -> Void)?
 
     override init() {
         super.init()
@@ -22,12 +30,21 @@ final class NotificationService: NSObject {
     }
 
     func prepare() async {
-        var settings = await center.notificationSettings()
-        if settings.authorizationStatus == .notDetermined {
-            _ = try? await center.requestAuthorization(options: [.alert, .sound])
-            settings = await center.notificationSettings()
+        healthChanged?(health(from: await center.notificationSettings()))
+    }
+
+    @discardableResult
+    func requestAuthorization() async throws -> NotificationHealth {
+        do {
+            _ = try await center.requestAuthorization(options: [.alert, .sound])
+        } catch {
+            healthChanged?(health(from: await center.notificationSettings()))
+            throw error
         }
-        healthChanged?(health(from: settings))
+        let settings = await center.notificationSettings()
+        let value = health(from: settings)
+        healthChanged?(value)
+        return value
     }
 
     func refreshHealth() async {
@@ -35,20 +52,28 @@ final class NotificationService: NSObject {
     }
 
     func deliver(_ event: NotificationEvent) {
-        let content = UNMutableNotificationContent()
-        content.title = event.text
-        if event.playsSound { content.sound = .default }
-        content.interruptionLevel = .active
-        let request = UNNotificationRequest(
-            identifier: "\(event)-\(UUID().uuidString)",
-            content: content,
-            trigger: nil
-        )
-        center.add(request) { [logger] error in
-            if let error {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await schedule(event)
+            } catch {
                 logger.error("Notification failed: \(String(describing: error), privacy: .public)")
-            } else {
-                logger.info("Notification delivered: \(event.text, privacy: .public)")
+                schedulingFailed?(error.localizedDescription)
+            }
+        }
+    }
+
+    func schedule(_ event: NotificationEvent) async throws {
+        let request = makeRequest(event)
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, any Error>) in
+            center.add(request) { [logger] error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    logger.info("Notification scheduled: \(event.title, privacy: .public)")
+                    continuation.resume()
+                }
             }
         }
     }
@@ -58,12 +83,40 @@ final class NotificationService: NSObject {
         NSWorkspace.shared.open(url)
     }
 
-    private func health(from settings: UNNotificationSettings) -> NotificationHealth {
-        guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
-            return .unavailable
+    private func makeRequest(_ event: NotificationEvent) -> UNNotificationRequest {
+        let content = UNMutableNotificationContent()
+        content.title = event.title
+        if let body = event.body {
+            content.body = body
         }
-        guard settings.alertSetting == .enabled else { return .unavailable }
-        return .available
+        if event.playsSound { content.sound = .default }
+        content.interruptionLevel = .active
+        return UNNotificationRequest(
+            identifier: "\(event)-\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+    }
+
+    private func health(from settings: UNNotificationSettings) -> NotificationHealth {
+        switch settings.authorizationStatus {
+        case .notDetermined:
+            return .notDetermined
+        case .denied:
+            return .denied
+        case .authorized, .provisional:
+            break
+        @unknown default:
+            return .unknown
+        }
+        switch settings.alertSetting {
+        case .enabled:
+            return .available
+        case .disabled, .notSupported:
+            return .alertsDisabled
+        @unknown default:
+            return .unknown
+        }
     }
 }
 

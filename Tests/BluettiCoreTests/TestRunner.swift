@@ -4,6 +4,7 @@ import Foundation
 enum TestRunner {
     static func main() {
         let tests = deviceModelTests()
+            + stationSelectionTests()
             + modbusTests()
             + telemetryDecoderTests()
             + powerStateDetectorTests()

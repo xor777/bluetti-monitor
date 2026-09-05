@@ -7,11 +7,13 @@ public enum PowerTransition: Equatable, Sendable {
 
 public struct PowerStateDetector: Sendable {
     public private(set) var confirmedState: ExternalPowerState
+    public private(set) var currentSessionConfirmedState: ExternalPowerState?
     private var candidate: ExternalPowerState?
     private var candidateCount = 0
 
     public init(previousConfirmed: ExternalPowerState = .unknown) {
         confirmedState = previousConfirmed
+        currentSessionConfirmedState = previousConfirmed == .unknown ? nil : previousConfirmed
     }
 
     public mutating func observe(voltage: Double) -> PowerTransition? {
@@ -28,8 +30,12 @@ public struct PowerStateDetector: Sendable {
             resetCandidate()
             return nil
         }
+
         guard observed != confirmedState else {
-            resetCandidate()
+            confirmCurrentSession(observed)
+            if currentSessionConfirmedState == observed {
+                resetCandidate()
+            }
             return nil
         }
 
@@ -43,6 +49,7 @@ public struct PowerStateDetector: Sendable {
 
         let previous = confirmedState
         confirmedState = observed
+        currentSessionConfirmedState = observed
         resetCandidate()
         if previous == .unknown {
             return .initial(observed)
@@ -50,8 +57,32 @@ public struct PowerStateDetector: Sendable {
         return .changed(from: previous, to: observed)
     }
 
+    public mutating func beginMonitoringSession() {
+        currentSessionConfirmedState = nil
+        resetCandidate()
+    }
+
+    public mutating func reset() {
+        confirmedState = .unknown
+        currentSessionConfirmedState = nil
+        resetCandidate()
+    }
+
     public mutating func resetCandidate() {
         candidate = nil
         candidateCount = 0
+    }
+
+    private mutating func confirmCurrentSession(_ observed: ExternalPowerState) {
+        guard currentSessionConfirmedState != observed else { return }
+        if candidate == observed {
+            candidateCount += 1
+        } else {
+            candidate = observed
+            candidateCount = 1
+        }
+        if candidateCount >= 2 {
+            currentSessionConfirmedState = observed
+        }
     }
 }

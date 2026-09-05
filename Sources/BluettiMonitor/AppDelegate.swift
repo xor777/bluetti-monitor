@@ -5,21 +5,38 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+    private static let firstRunCompletionKey = "didCompleteFirstRunSetup"
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private var model: AppModel!
     private var session: BluettiDeviceSession!
     private var modelObserver: AnyCancellable?
+    private var sessionStarted = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
         let notificationService = NotificationService()
-        model = AppModel(notifications: notificationService)
+        let loginItemService = LoginItemService()
+        model = AppModel(
+            notifications: notificationService,
+            loginItems: loginItemService,
+            isFirstRunComplete: UserDefaults.standard.bool(
+                forKey: Self.firstRunCompletionKey
+            )
+        )
         let central = BluetoothCentral()
         session = BluettiDeviceSession(central: central, model: model)
         model.reconnectAction = { [weak session] in session?.reconnect() }
         model.openBluetoothSettingsAction = { [weak central] in central?.openBluetoothSettings() }
+        model.beginDeviceSelectionAction = { [weak session] in session?.beginDeviceSelection() }
+        model.cancelDeviceSelectionAction = { [weak session] in session?.cancelDeviceSelection() }
+        model.rescanDeviceSelectionAction = { [weak session] in session?.rescanDeviceSelection() }
+        model.selectDeviceAction = { [weak session] id in session?.selectDevice(id) }
+        model.startMonitoringAction = { [weak self] in self?.startSessionIfNeeded() }
+        model.completeFirstRunAction = {
+            UserDefaults.standard.set(true, forKey: Self.firstRunCompletionKey)
+        }
 
         configureStatusItem()
         configurePopover()
@@ -40,13 +57,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             object: nil
         )
 
-        session.start()
-        Task { await notificationService.prepare() }
+        if model.isFirstRunComplete {
+            startSessionIfNeeded()
+        }
+        Task { [weak model] in await model?.refreshSystemHealth() }
 
-        if !UserDefaults.standard.bool(forKey: "didShowFirstRunPopover") {
-            UserDefaults.standard.set(true, forKey: "didShowFirstRunPopover")
+        if !model.isFirstRunComplete {
             DispatchQueue.main.async { [weak self] in self?.showPopover() }
         }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard model != nil else { return }
+        Task { [weak model] in await model?.refreshSystemHealth() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -62,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @objc private func didWake() {
+        guard sessionStarted else { return }
         session.refreshImmediately()
     }
 
@@ -79,17 +103,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
-        popover.contentSize = NSSize(width: 440, height: 330)
-        popover.contentViewController = NSHostingController(
+        let hostingController = NSHostingController(
             rootView: PopoverView(model: model)
         )
+        hostingController.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = hostingController
     }
 
     private func showPopover() {
         guard let button = statusItem.button else { return }
+        Task { [weak model] in await model?.refreshSystemHealth() }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         model.setPopoverVisible(true)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func startSessionIfNeeded() {
+        guard !sessionStarted else { return }
+        sessionStarted = true
+        session.start()
     }
 
     private func updateStatusItem() {

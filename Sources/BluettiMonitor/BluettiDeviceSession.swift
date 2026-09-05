@@ -42,11 +42,46 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
         nextVoltageAt = ProcessInfo.processInfo.systemUptime
     }
 
+    func beginDeviceSelection() {
+        central.beginDeviceSelection()
+    }
+
+    func cancelDeviceSelection() {
+        central.cancelDeviceSelection()
+    }
+
+    func rescanDeviceSelection() {
+        central.rescanDeviceSelection()
+    }
+
+    func selectDevice(_ id: UUID) {
+        central.selectDevice(id)
+    }
+
+    func resetForDeviceChange() {
+        activeEpoch &+= 1
+        endMonitoring()
+        handshake = V2Handshake()
+        frameStream = V2FrameStream()
+        coordinator.reset()
+        powerDetector.reset()
+        freshness = .lost
+        model?.resetForDeviceChange()
+    }
+
     func bluetoothAvailabilityChanged(_ availability: BluetoothAvailability) {
         model?.setBluetooth(availability)
         if availability != .poweredOn {
             monitoringGap(error: nil)
         }
+    }
+
+    func bluetoothSelectionChanged(_ selection: StationSelectionSnapshot) {
+        model?.setStationSelection(selection)
+    }
+
+    func bluetoothWillSwitchDevice() {
+        resetForDeviceChange()
     }
 
     func bluetoothConnectionChanged(
@@ -94,7 +129,8 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
         handshake = V2Handshake()
         frameStream = V2FrameStream(encryptedHeader: .fixedIV)
         coordinator.reset()
-        powerDetector.resetCandidate()
+        powerDetector.beginMonitoringSession()
+        model?.beginMonitoringSession()
         readinessAnnounced = false
         freshness = .lost
     }
@@ -144,12 +180,14 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
             setFreshness(.fresh)
             if !readinessAnnounced {
                 readinessAnnounced = true
-                central.markMonitoringReady()
+                central.markMonitoringReady(epoch: epoch)
                 model?.monitoringReady()
             }
             if let transition = powerDetector.observe(voltage: voltage) {
                 logger.notice("Power transition: \(String(describing: transition), privacy: .public)")
                 model?.handle(transition)
+            } else if let state = powerDetector.currentSessionConfirmedState {
+                model?.confirmPowerState(state)
             }
         } else if let soc = patch.batteryPercent {
             logger.info("Battery \(soc)%")
@@ -257,7 +295,7 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
 
     private func monitoringGap(error: String?) {
         endMonitoring()
-        powerDetector.resetCandidate()
+        powerDetector.beginMonitoringSession()
         model?.monitoringLost(error: error)
     }
 
