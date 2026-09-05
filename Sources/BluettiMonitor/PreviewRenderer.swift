@@ -114,7 +114,7 @@ enum PreviewRenderer {
 
     private static func verifyAdaptiveHostingSize() throws {
         guard let normal = PreviewFixture.all.first(where: { $0.name == "healthy" }),
-              let settings = PreviewFixture.all.first(where: { $0.name == "settings" })
+              let settings = PreviewFixture.all.first(where: { $0.name == "settings-login-unavailable" })
         else {
             throw PreviewRendererError.invalidAdaptiveSize
         }
@@ -200,9 +200,18 @@ private struct PreviewFixture {
                 isCurrent: false
             ),
         ]
+        let unselectedChoices = choices.map {
+            PopoverStationChoice(
+                id: $0.id,
+                name: $0.name,
+                identity: $0.identity,
+                isCurrent: false
+            )
+        }
 
         func make(
             screen: PopoverScreen = .normal,
+            firstConnectionStarted: Bool = true,
             deviceName: String = "Premium 100 V2",
             deviceIdentity: String = "HOME-41",
             bluetooth: BluetoothAvailability = .poweredOn,
@@ -221,6 +230,7 @@ private struct PreviewFixture {
             batteryState: LowBatteryVisualState = .normal,
             monitoringDetail: String? = nil,
             monitoringRecovery: MonitoringRecoveryAction? = nil,
+            hasConnectionError: Bool = false,
             notificationHealth: NotificationHealth = .available,
             notificationResult: NotificationActionResult? = nil,
             lastUpdateAge: TimeInterval? = 1,
@@ -229,10 +239,19 @@ private struct PreviewFixture {
             stationCandidates: [PopoverStationChoice]? = nil,
             selectionMode: StationSelectionMode = .selectedOnly,
             canCancelSelection: Bool = false,
+            isRescanning: Bool = false,
             loginStatus: LoginItemStatus = .disabled,
             loginError: String? = nil,
             launchAtLogin: Bool = false
         ) -> PopoverViewState {
+            let resolvedChoices = stationCandidates ?? Array(choices.prefix(1))
+            let selection = StationSelectionSnapshot(
+                selectedID: selectedID,
+                candidates: resolvedChoices.map {
+                    StationCandidate(id: $0.id, advertisedName: $0.name)
+                },
+                mode: selectionMode
+            )
             let presentation = StatusPresentation.make(.init(
                 bluetooth: bluetooth,
                 connection: connection,
@@ -245,6 +264,19 @@ private struct PreviewFixture {
             ))
             return PopoverViewState(
                 screen: screen,
+                firstConnectionPhase: FirstConnectionPresentation.resolve(
+                    started: firstConnectionStarted,
+                    bluetooth: bluetooth,
+                    selection: selection,
+                    connection: connection,
+                    power: power,
+                    freshness: freshness,
+                    powerConfirmedInCurrentSession: powerConfirmed,
+                    scanningFor: scanningFor,
+                    hasConnectionError: hasConnectionError,
+                    isRescanning: isRescanning
+                ),
+                isDeviceRescanInProgress: isRescanning,
                 deviceName: deviceName,
                 deviceIdentity: selectedID == nil ? nil : deviceIdentity,
                 bluetooth: bluetooth,
@@ -265,7 +297,7 @@ private struct PreviewFixture {
                 isVisible: true,
                 animationsEnabled: false,
                 selectedID: selectedID,
-                stationCandidates: stationCandidates ?? Array(choices.prefix(1)),
+                stationCandidates: resolvedChoices,
                 selectionMode: selectionMode,
                 canCancelDeviceSelection: canCancelSelection,
                 loginItemStatus: loginStatus,
@@ -419,6 +451,22 @@ private struct PreviewFixture {
                 )
             ),
             PreviewFixture(
+                name: "discovery-rescanning",
+                state: make(
+                    screen: .chooser,
+                    connection: .scanning,
+                    power: .unknown,
+                    freshness: .lost,
+                    snapshot: DeviceSnapshot(),
+                    powerConfirmed: false,
+                    batteryState: .unavailable,
+                    selectedID: nil,
+                    stationCandidates: [],
+                    selectionMode: .choosing,
+                    isRescanning: true
+                )
+            ),
+            PreviewFixture(
                 name: "bluetooth-denied",
                 state: make(
                     bluetooth: .unauthorized,
@@ -427,7 +475,7 @@ private struct PreviewFixture {
                     snapshot: DeviceSnapshot(),
                     powerConfirmed: false,
                     batteryState: .unavailable,
-                    monitoringRecovery: .openBluetoothSettings,
+                    monitoringRecovery: .openBluetoothPrivacySettings,
                     notificationHealth: .denied,
                     lastUpdateAge: nil
                 )
@@ -441,7 +489,7 @@ private struct PreviewFixture {
                     snapshot: DeviceSnapshot(),
                     powerConfirmed: false,
                     batteryState: .unavailable,
-                    monitoringRecovery: .openBluetoothSettings,
+                    monitoringRecovery: .openBluetoothControlSettings,
                     lastUpdateAge: nil
                 )
             ),
@@ -450,9 +498,10 @@ private struct PreviewFixture {
                 state: make(notificationHealth: .denied)
             ),
             PreviewFixture(
-                name: "first-run",
+                name: "first-connection-welcome",
                 state: make(
                     screen: .setup,
+                    firstConnectionStarted: false,
                     bluetooth: .unknown,
                     connection: .disconnected,
                     power: .unknown,
@@ -460,7 +509,26 @@ private struct PreviewFixture {
                     snapshot: DeviceSnapshot(),
                     powerConfirmed: false,
                     batteryState: .unavailable,
-                    notificationHealth: .notDetermined,
+                    notificationHealth: .available,
+                    lastUpdateAge: nil,
+                    selectedID: nil,
+                    stationCandidates: [],
+                    selectionMode: .initialDiscovery,
+                    loginStatus: .unavailable,
+                    loginError: "Автозапуск сейчас недоступен"
+                )
+            ),
+            PreviewFixture(
+                name: "first-connection-searching",
+                state: make(
+                    screen: .setup,
+                    bluetooth: .poweredOn,
+                    connection: .scanning,
+                    power: .unknown,
+                    freshness: .lost,
+                    snapshot: DeviceSnapshot(),
+                    powerConfirmed: false,
+                    batteryState: .unavailable,
                     lastUpdateAge: nil,
                     selectedID: nil,
                     stationCandidates: [],
@@ -468,7 +536,7 @@ private struct PreviewFixture {
                 )
             ),
             PreviewFixture(
-                name: "first-run-chooser",
+                name: "first-connection-empty",
                 state: make(
                     screen: .setup,
                     connection: .scanning,
@@ -477,22 +545,114 @@ private struct PreviewFixture {
                     snapshot: DeviceSnapshot(),
                     powerConfirmed: false,
                     batteryState: .unavailable,
-                    notificationHealth: .notDetermined,
                     lastUpdateAge: nil,
                     selectedID: nil,
-                    stationCandidates: Array(choices.dropFirst()),
+                    stationCandidates: [],
                     selectionMode: .choosing
                 )
             ),
             PreviewFixture(
-                name: "settings",
+                name: "first-connection-multiple",
+                state: make(
+                    screen: .setup,
+                    connection: .scanning,
+                    power: .unknown,
+                    freshness: .lost,
+                    snapshot: DeviceSnapshot(),
+                    powerConfirmed: false,
+                    batteryState: .unavailable,
+                    lastUpdateAge: nil,
+                    selectedID: nil,
+                    stationCandidates: unselectedChoices,
+                    selectionMode: .choosing
+                )
+            ),
+            PreviewFixture(
+                name: "first-connection-rescanning",
+                state: make(
+                    screen: .setup,
+                    connection: .scanning,
+                    power: .unknown,
+                    freshness: .lost,
+                    snapshot: DeviceSnapshot(),
+                    powerConfirmed: false,
+                    batteryState: .unavailable,
+                    lastUpdateAge: nil,
+                    selectedID: nil,
+                    stationCandidates: [],
+                    selectionMode: .choosing,
+                    isRescanning: true
+                )
+            ),
+            PreviewFixture(
+                name: "first-connection-bluetooth-blocked",
+                state: make(
+                    screen: .setup,
+                    bluetooth: .unauthorized,
+                    connection: .disconnected,
+                    power: .unknown,
+                    freshness: .lost,
+                    snapshot: DeviceSnapshot(),
+                    powerConfirmed: false,
+                    batteryState: .unavailable,
+                    lastUpdateAge: nil,
+                    selectedID: nil,
+                    stationCandidates: [],
+                    selectionMode: .initialDiscovery
+                )
+            ),
+            PreviewFixture(
+                name: "first-connection-bluetooth-off",
+                state: make(
+                    screen: .setup,
+                    bluetooth: .poweredOff,
+                    connection: .disconnected,
+                    power: .unknown,
+                    freshness: .lost,
+                    snapshot: DeviceSnapshot(),
+                    powerConfirmed: false,
+                    batteryState: .unavailable,
+                    lastUpdateAge: nil,
+                    selectedID: nil,
+                    stationCandidates: [],
+                    selectionMode: .initialDiscovery
+                )
+            ),
+            PreviewFixture(
+                name: "first-connection-selected-failure",
+                state: make(
+                    screen: .setup,
+                    connection: .disconnected,
+                    power: .unknown,
+                    freshness: .lost,
+                    snapshot: DeviceSnapshot(model: "PR100V2"),
+                    powerConfirmed: false,
+                    batteryState: .unavailable,
+                    monitoringDetail: "Проверьте, не подключено ли приложение BLUETTI на телефоне",
+                    hasConnectionError: true,
+                    lastUpdateAge: nil,
+                    selectedID: current,
+                    stationCandidates: Array(choices.prefix(1)),
+                    selectionMode: .selectedOnly
+                )
+            ),
+            PreviewFixture(
+                name: "main-notifications-not-determined",
+                state: make(notificationHealth: .notDetermined)
+            ),
+            PreviewFixture(
+                name: "settings-login-unavailable",
                 state: make(
                     screen: .settings,
-                    notificationResult: .failure(
-                        "Не удалось запланировать уведомление: служба временно недоступна"
-                    ),
+                    loginStatus: .unavailable,
+                    loginError: "Автозапуск сейчас недоступен"
+                )
+            ),
+            PreviewFixture(
+                name: "settings-login-requires-approval",
+                state: make(
+                    screen: .settings,
                     loginStatus: .requiresApproval,
-                    loginError: "Подтвердите Bluetti Monitor в настройках объектов входа",
                     launchAtLogin: true
                 )
             ),

@@ -154,8 +154,13 @@ final class BluetoothCentral: NSObject {
         perform(action)
     }
 
-    func openBluetoothSettings() {
+    func openBluetoothPrivacySettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    func openBluetoothControlSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.BluetoothSettings") else { return }
         NSWorkspace.shared.open(url)
     }
 

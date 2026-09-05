@@ -5,6 +5,8 @@ enum TestRunner {
     static func main() {
         let tests = deviceModelTests()
             + stationSelectionTests()
+            + firstRunReadinessTests()
+            + firstConnectionPresentationTests()
             + modbusTests()
             + telemetryDecoderTests()
             + powerStateDetectorTests()

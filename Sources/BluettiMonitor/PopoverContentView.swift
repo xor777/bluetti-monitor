@@ -10,7 +10,8 @@ enum PopoverScreen: Equatable {
 }
 
 enum MonitoringRecoveryAction: Equatable {
-    case openBluetoothSettings
+    case openBluetoothPrivacySettings
+    case openBluetoothControlSettings
     case reconnect
     case chooseDevice
 }
@@ -24,6 +25,8 @@ struct PopoverStationChoice: Identifiable, Equatable {
 
 struct PopoverViewState {
     let screen: PopoverScreen
+    let firstConnectionPhase: FirstConnectionPhase
+    let isDeviceRescanInProgress: Bool
     let deviceName: String
     let deviceIdentity: String?
     let bluetooth: BluetoothAvailability
@@ -61,13 +64,13 @@ struct PopoverActions {
     var rescanDevices: () -> Void
     var selectDevice: (UUID) -> Void
     var reconnect: () -> Void
-    var openBluetoothSettings: () -> Void
+    var openBluetoothPrivacySettings: () -> Void
+    var openBluetoothControlSettings: () -> Void
     var performNotificationAction: (NotificationReadinessAction) -> Void
     var testNotification: () -> Void
     var clearNotificationResult: () -> Void
     var setLaunchAtLogin: (Bool) -> Void
     var openLoginItemSettings: () -> Void
-    var completeFirstRun: () -> Void
     var copyDiagnostics: () -> Void
     var showAbout: () -> Void
     var quit: () -> Void
@@ -82,13 +85,13 @@ struct PopoverActions {
         rescanDevices: {},
         selectDevice: { _ in },
         reconnect: {},
-        openBluetoothSettings: {},
+        openBluetoothPrivacySettings: {},
+        openBluetoothControlSettings: {},
         performNotificationAction: { _ in },
         testNotification: {},
         clearNotificationResult: {},
         setLaunchAtLogin: { _ in },
         openLoginItemSettings: {},
-        completeFirstRun: {},
         copyDiagnostics: {},
         showAbout: {},
         quit: {}
@@ -107,8 +110,8 @@ struct PopoverContentView: View {
                 NormalMonitorView(state: state, actions: actions)
                     .padding(.top, 15)
             case .setup:
-                serviceHeader
-                SetupView(state: state, actions: actions)
+                setupHeader
+                FirstConnectionView(state: state, actions: actions)
                     .padding(.top, 18)
             case .chooser:
                 NavigationHeader(title: "Сменить устройство", action: actions.cancelDeviceSelection)
@@ -158,6 +161,37 @@ struct PopoverContentView: View {
             Spacer(minLength: 10)
             ServiceMenu(actions: actions)
         }
+    }
+
+    private var setupHeader: some View {
+        HStack {
+            Text("Bluetti Monitor")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.primary)
+            Spacer()
+            SetupServiceMenu(actions: actions)
+        }
+    }
+}
+
+private struct SetupServiceMenu: View {
+    let actions: PopoverActions
+
+    var body: some View {
+        Menu {
+            Button("Скопировать диагностику", action: actions.copyDiagnostics)
+            Button("О приложении", action: actions.showAbout)
+            Divider()
+            Button("Выйти из приложения", action: actions.quit)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 15, weight: .semibold))
+                .frame(width: 28, height: 22)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Действия")
     }
 }
 
@@ -327,7 +361,8 @@ private struct MonitoringStatusView: View {
 
     private func recoveryLabel(_ action: MonitoringRecoveryAction) -> String {
         switch action {
-        case .openBluetoothSettings: "Открыть настройки Bluetooth"
+        case .openBluetoothPrivacySettings, .openBluetoothControlSettings:
+            "Открыть настройки Bluetooth"
         case .reconnect: "Переподключить"
         case .chooseDevice: "Выбрать устройство"
         }
@@ -335,7 +370,8 @@ private struct MonitoringStatusView: View {
 
     private func perform(_ action: MonitoringRecoveryAction) {
         switch action {
-        case .openBluetoothSettings: actions.openBluetoothSettings()
+        case .openBluetoothPrivacySettings: actions.openBluetoothPrivacySettings()
+        case .openBluetoothControlSettings: actions.openBluetoothControlSettings()
         case .reconnect: actions.reconnect()
         case .chooseDevice: actions.beginDeviceSelection()
         }
@@ -498,111 +534,242 @@ private struct NotificationResultView: View {
     }
 }
 
-private struct SetupView: View {
+private struct FirstConnectionView: View {
     let state: PopoverViewState
     let actions: PopoverActions
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: MonitorStyle.sectionSpacing) {
             VStack(alignment: .leading, spacing: 5) {
-                Text("Настройка мониторинга")
+                Text("Подключим станцию")
                     .font(.system(size: 23, weight: .semibold))
-                Text("Следит за питанием станции по Bluetooth. Всё работает локально, настройки станции не меняются.")
+                Text("Найдём Premium 100 V2 рядом с Mac по Bluetooth. Настройки станции не меняются.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            SetupStationView(state: state, actions: actions)
-
-            VStack(alignment: .leading, spacing: 7) {
-                Text("Предупреждения")
-                    .font(.system(size: 13, weight: .semibold))
-                NotificationReadinessView(state: state, actions: actions)
-                if !state.notificationReadiness.canScheduleMonitoringAlerts {
-                    Text("Настройку можно завершить, но без разрешения macOS не покажет предупреждения.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            LoginItemRow(state: state, actions: actions)
-
-            HStack {
-                Spacer()
-                Button("Готово", action: actions.completeFirstRun)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(state.selectedID == nil)
-            }
+            phaseContent
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-}
 
-private struct SetupStationView: View {
-    let state: PopoverViewState
-    let actions: PopoverActions
+    @ViewBuilder
+    private var phaseContent: some View {
+        switch state.firstConnectionPhase {
+        case .welcome:
+            primaryButton(
+                "Найти станцию",
+                systemImage: "antenna.radiowaves.left.and.right",
+                action: actions.startMonitoring
+            )
+        case .readyToConnect:
+            selectedStationCard
+            primaryButton(
+                "Подключить станцию",
+                systemImage: "link",
+                action: actions.startMonitoring
+            )
+            changeStationButton
+        case .startingBluetooth:
+            progressCard(
+                title: "Запускаем Bluetooth…",
+                detail: "Если macOS спросит разрешение, подтвердите доступ для Bluetti Monitor."
+            )
+        case let .searching(candidateCount):
+            progressCard(
+                title: "Ищем станции поблизости…",
+                detail: candidateCount == 0
+                    ? "Поиск займёт несколько секунд."
+                    : "Найдено: \(candidateCount). Завершаем поиск…"
+            )
+        case .choosing:
+            Text("Выберите станцию по подписи Bluetooth:")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            StationChoicesView(choices: state.stationCandidates, select: actions.selectDevice)
+            Button("Искать снова", action: actions.rescanDevices)
+                .buttonStyle(.link)
+                .font(.system(size: 12))
+        case .empty:
+            EmptyDiscoveryView(showPhoneHint: true)
+            primaryButton(
+                "Искать снова",
+                systemImage: "arrow.clockwise",
+                action: actions.rescanDevices
+            )
+        case .rescanning:
+            progressCard(
+                title: "Ищем станции снова…",
+                detail: "Обновляем список устройств поблизости."
+            )
+        case .bluetoothUnauthorized:
+            statusCard(
+                symbol: "hand.raised.fill",
+                color: .orange,
+                title: "Нет доступа к Bluetooth",
+                detail: "Разрешите Bluetooth для Bluetti Monitor в настройках macOS."
+            )
+            primaryButton(
+                "Открыть настройки Bluetooth",
+                systemImage: "gear",
+                action: actions.openBluetoothPrivacySettings
+            )
+        case .bluetoothOff:
+            statusCard(
+                symbol: "antenna.radiowaves.left.and.right.slash",
+                color: .orange,
+                title: "Bluetooth выключен",
+                detail: "Включите Bluetooth, чтобы найти станцию."
+            )
+            primaryButton(
+                "Открыть настройки Bluetooth",
+                systemImage: "gear",
+                action: actions.openBluetoothControlSettings
+            )
+        case .bluetoothUnsupported:
+            statusCard(
+                symbol: "exclamationmark.triangle.fill",
+                color: .orange,
+                title: "Bluetooth недоступен",
+                detail: "Этот Mac не сообщает доступный Bluetooth-адаптер."
+            )
+        case .bluetoothResetting:
+            progressCard(
+                title: "Bluetooth перезапускается…",
+                detail: "Подождите немного — поиск продолжится автоматически."
+            )
+        case .findingSelectedStation:
+            progressCard(
+                title: "Ищем выбранную станцию…",
+                detail: selectedStationDetail
+            )
+            changeStationButton
+        case .selectedStationNotFound:
+            statusCard(
+                symbol: "externaldrive.badge.questionmark",
+                color: .orange,
+                title: "Выбранная станция не найдена",
+                detail: "Убедитесь, что станция включена и находится рядом."
+            )
+            recoveryButtons
+        case .connecting:
+            progressCard(
+                title: "Подключаемся к станции…",
+                detail: selectedStationDetail
+            )
+            changeStationButton
+        case .waitingForTelemetry:
+            progressCard(
+                title: "Соединение установлено",
+                detail: "Проверяем текущее питание станции…"
+            )
+            changeStationButton
+        case .connectionFailed:
+            statusCard(
+                symbol: "exclamationmark.triangle.fill",
+                color: .orange,
+                title: "Не удалось подключиться",
+                detail: state.monitoringDetail
+                    ?? "Проверьте, что станция включена, находится рядом и свободна для Bluetooth-соединения."
+            )
+            recoveryButtons
+        case .ready:
+            statusCard(
+                symbol: "checkmark.circle.fill",
+                color: MonitorStyle.accent,
+                title: "Мониторинг запущен",
+                detail: "Получены актуальные данные о питании."
+            )
+        }
+    }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text("Станция")
-                .font(.system(size: 13, weight: .semibold))
+    private var selectedStationCard: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "externaldrive.connected.to.line.below")
+                .font(.system(size: 15))
+                .foregroundStyle(MonitorStyle.accent)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Premium 100 V2")
+                    .font(.system(size: 13, weight: .medium))
+                Text(state.deviceIdentity ?? "Станция выбрана")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: MonitorStyle.sectionRadius))
+    }
 
-            if let selectedID = state.selectedID {
-                HStack(alignment: .top, spacing: 9) {
-                    Image(systemName: state.connection == .connected ? "checkmark.circle.fill" : "circle.dotted")
-                        .foregroundStyle(state.connection == .connected ? MonitorStyle.accent : Color.secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Premium 100 V2")
-                            .font(.system(size: 13, weight: .medium))
-                        Text(selectedIdentity(selectedID))
-                            .font(.system(size: 11, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Изменить", action: actions.beginDeviceSelection)
-                        .buttonStyle(.link)
-                        .font(.system(size: 12))
-                }
-            } else if state.bluetooth == .unknown && state.selectionMode == .initialDiscovery {
-                Text("Сначала macOS попросит доступ к Bluetooth, затем приложение найдёт станции рядом.")
-                    .font(.system(size: 12))
+    private var changeStationButton: some View {
+        Button("Выбрать другую станцию", action: actions.beginDeviceSelection)
+            .buttonStyle(.link)
+            .font(.system(size: 12))
+    }
+
+    private var recoveryButtons: some View {
+        HStack(spacing: 9) {
+            Button(action: actions.reconnect) {
+                Text("Повторить")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(primaryActionForeground)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(
+                        MonitorStyle.accent,
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    )
+            }
+            .buttonStyle(.plain)
+            Button("Выбрать другую", action: actions.beginDeviceSelection)
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private var selectedStationDetail: String {
+        state.deviceIdentity.map { "Premium 100 V2 · \($0)" }
+            ?? "Premium 100 V2"
+    }
+
+    private func primaryButton(
+        _ title: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(primaryActionForeground)
+                .frame(maxWidth: .infinity, minHeight: 42)
+                .background(
+                    MonitorStyle.accent,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var primaryActionForeground: Color {
+        colorScheme == .dark ? Color.black.opacity(0.9) : .white
+    }
+
+    private func progressCard(title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            ProgressView()
+                .controlSize(.small)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Text(detail)
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Найти станцию", action: actions.startMonitoring)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-            } else if state.bluetooth == .unauthorized || state.bluetooth == .poweredOff {
-                Text(state.presentation.subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Button("Открыть настройки Bluetooth", action: actions.openBluetoothSettings)
-                    .buttonStyle(.link)
-                    .font(.system(size: 12))
-            } else if state.selectionMode == .initialDiscovery {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Собираем список станций…")
-                            .font(.system(size: 12, weight: .medium))
-                        if !state.stationCandidates.isEmpty {
-                            Text("Найдено: \(state.stationCandidates.count). Выбор появится после завершения поиска.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            } else if !state.stationCandidates.isEmpty {
-                Text("Выберите станцию по подписи Bluetooth:")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                StationChoicesView(choices: state.stationCandidates, select: actions.selectDevice)
-            } else {
-                EmptyDiscoveryView(showPhoneHint: state.bluetooth == .poweredOn)
-                Button("Искать снова", action: actions.rescanDevices)
-                    .buttonStyle(.link)
-                    .font(.system(size: 12))
             }
         }
         .padding(11)
@@ -610,9 +777,29 @@ private struct SetupStationView: View {
         .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: MonitorStyle.sectionRadius))
     }
 
-    private func selectedIdentity(_ id: UUID) -> String {
-        state.stationCandidates.first(where: { $0.id == id })?.identity
-            ?? shortIdentity(id)
+    private func statusCard(
+        symbol: String,
+        color: Color,
+        title: String,
+        detail: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: MonitorStyle.sectionRadius))
     }
 }
 
@@ -622,15 +809,21 @@ private struct DeviceChooserView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: MonitorStyle.sectionSpacing) {
-            if state.bluetooth == .unauthorized || state.bluetooth == .poweredOff {
+            if BluetoothSettingsRecovery.destination(for: state.bluetooth) != nil {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(state.presentation.title)
                         .font(.system(size: 18, weight: .semibold))
                     Text(state.presentation.subtitle)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
-                    Button("Открыть настройки Bluetooth", action: actions.openBluetoothSettings)
+                    Button("Открыть настройки Bluetooth", action: openBluetoothRecovery)
                         .buttonStyle(.link)
+                }
+            } else if state.isDeviceRescanInProgress {
+                HStack(spacing: 9) {
+                    ProgressView().controlSize(.small)
+                    Text("Ищем станции снова…")
+                        .font(.system(size: 13))
                 }
             } else if state.stationCandidates.isEmpty {
                 if state.selectionMode == .initialDiscovery {
@@ -652,7 +845,7 @@ private struct DeviceChooserView: View {
 
             HStack {
                 Button("Искать снова", action: actions.rescanDevices)
-                    .disabled(state.bluetooth != .poweredOn)
+                    .disabled(state.bluetooth != .poweredOn || state.isDeviceRescanInProgress)
                 Spacer()
                 if state.canCancelDeviceSelection {
                     Button("Отмена", action: actions.cancelDeviceSelection)
@@ -669,6 +862,17 @@ private struct DeviceChooserView: View {
             return "Выберите станцию по подписи Bluetooth. Текущая продолжает работать, пока вы не выберете другую."
         }
         return "Выберите станцию по подписи Bluetooth."
+    }
+
+    private func openBluetoothRecovery() {
+        switch BluetoothSettingsRecovery.destination(for: state.bluetooth) {
+        case .privacyPermission:
+            actions.openBluetoothPrivacySettings()
+        case .bluetoothControl:
+            actions.openBluetoothControlSettings()
+        case nil:
+            break
+        }
     }
 }
 
@@ -796,41 +1000,56 @@ private struct LoginItemRow: View {
     let state: PopoverViewState
     let actions: PopoverActions
 
+    @ViewBuilder
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Toggle(
-                isOn: Binding(
-                    get: { state.launchAtLogin },
-                    set: { value in actions.setLaunchAtLogin(value) }
-                )
-            ) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Запускать при входе в macOS")
-                        .font(.system(size: 13, weight: .medium))
-                    Text(loginDetail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(loginDetailColor)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .toggleStyle(.switch)
-
-            if let error = state.loginItemError, !error.isEmpty {
-                Text(error)
+        if state.loginItemStatus == .unavailable {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Запуск при входе в macOS")
+                    .font(.system(size: 13, weight: .medium))
+                Text("Автозапуск сейчас недоступен. При ручном запуске мониторинг работает как обычно.")
                     .font(.system(size: 11))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .loginItemCard()
+        } else {
+            VStack(alignment: .leading, spacing: 7) {
+                Toggle(
+                    isOn: Binding(
+                        get: { state.launchAtLogin },
+                        set: { value in actions.setLaunchAtLogin(value) }
+                    )
+                ) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Запускать при входе в macOS")
+                            .font(.system(size: 13, weight: .medium))
+                        Text(loginDetail)
+                            .font(.system(size: 11))
+                            .foregroundStyle(loginDetailColor)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .toggleStyle(.switch)
+                .disabled(state.loginItemStatus == .unknown)
 
-            if state.loginItemStatus == .requiresApproval || state.loginItemError != nil {
-                Button("Открыть настройки объектов входа", action: actions.openLoginItemSettings)
-                    .buttonStyle(.link)
-                    .font(.system(size: 11))
+                if let error = state.loginItemError,
+                   !error.isEmpty,
+                   error != loginDetail
+                {
+                    Text(error)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if state.loginItemStatus == .requiresApproval {
+                    Button("Открыть настройки объектов входа", action: actions.openLoginItemSettings)
+                        .buttonStyle(.link)
+                        .font(.system(size: 11))
+                }
             }
+            .loginItemCard()
         }
-        .padding(11)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: MonitorStyle.sectionRadius))
     }
 
     private var loginDetail: String {
@@ -845,6 +1064,17 @@ private struct LoginItemRow: View {
 
     private var loginDetailColor: Color {
         state.loginItemStatus == .requiresApproval ? .orange : .secondary
+    }
+}
+
+private extension View {
+    func loginItemCard() -> some View {
+        padding(11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color.primary.opacity(0.045),
+                in: RoundedRectangle(cornerRadius: MonitorStyle.sectionRadius)
+            )
     }
 }
 

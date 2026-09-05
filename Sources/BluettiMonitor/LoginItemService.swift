@@ -76,7 +76,7 @@ private enum LoginItemServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .serviceUnavailable:
-            "Автозапуск недоступен для этой копии приложения"
+            "Автозапуск сейчас недоступен"
         }
     }
 }

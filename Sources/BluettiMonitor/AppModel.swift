@@ -32,11 +32,14 @@ final class AppModel: ObservableObject {
     @Published private(set) var loginItemError: String?
     @Published private(set) var notificationActionResult: NotificationActionResult?
     @Published private(set) var isFirstRunComplete: Bool
+    @Published private(set) var hasStartedFirstConnection = false
+    @Published private(set) var isDeviceRescanInProgress = false
 
     private let notifications: any NotificationServicing
     private let loginItems: any LoginItemManaging
     var reconnectAction: (() -> Void)?
-    var openBluetoothSettingsAction: (() -> Void)?
+    var openBluetoothPrivacySettingsAction: (() -> Void)?
+    var openBluetoothControlSettingsAction: (() -> Void)?
     var beginDeviceSelectionAction: (() -> Void)?
     var cancelDeviceSelectionAction: (() -> Void)?
     var rescanDeviceSelectionAction: (() -> Void)?
@@ -53,15 +56,21 @@ final class AppModel: ObservableObject {
     private var everReady = false
     private var batteryObservedInCurrentSession = false
     private var lastBatteryUpdate: Date?
+    private let deviceRescanProgressDuration: TimeInterval
+    private var deviceRescanGeneration: UInt64 = 0
+    private var awaitingDeviceRescanReset = false
+    private var deviceRescanBaselineIDs: Set<UUID> = []
 
     init(
         notifications: any NotificationServicing,
         loginItems: any LoginItemManaging,
-        isFirstRunComplete: Bool
+        isFirstRunComplete: Bool,
+        deviceRescanProgressDuration: TimeInterval = 3
     ) {
         self.notifications = notifications
         self.loginItems = loginItems
         self.isFirstRunComplete = isFirstRunComplete
+        self.deviceRescanProgressDuration = deviceRescanProgressDuration
         notifications.healthChanged = { [weak self] health in
             guard let self else { return }
             let previousHealth = notificationHealth
@@ -118,10 +127,15 @@ final class AppModel: ObservableObject {
 
     func setBluetooth(_ value: BluetoothAvailability) {
         bluetooth = value
+        if value != .poweredOn {
+            finishDeviceRescanProgress()
+        }
     }
 
     func setStationSelection(_ value: StationSelectionSnapshot) {
         stationSelection = value
+        updateDeviceRescanProgress(for: value)
+        completeFirstRunIfReady()
     }
 
     func setCentralConnection(
@@ -148,6 +162,7 @@ final class AppModel: ObservableObject {
         } else {
             scanningFor = 0
         }
+        completeFirstRunIfReady()
     }
 
     func apply(_ patch: TelemetryPatch, at date: Date = Date()) {
@@ -162,6 +177,7 @@ final class AppModel: ObservableObject {
 
     func setFreshness(_ value: DataFreshness) {
         freshness = value
+        completeFirstRunIfReady()
     }
 
     func beginMonitoringSession() {
@@ -181,6 +197,7 @@ final class AppModel: ObservableObject {
         if let event = notificationPolicy.monitoringReady() {
             notifications.deliver(event)
         }
+        completeFirstRunIfReady()
     }
 
     func monitoringLost(error: String?) {
@@ -203,6 +220,7 @@ final class AppModel: ObservableObject {
             outageStartedAt = outageTracker.startedAt.map(Date.init(timeIntervalSinceReferenceDate:))
         }
         deliverLowBatteryAlertIfNeeded(at: date)
+        completeFirstRunIfReady()
     }
 
     func handle(_ transition: PowerTransition, at date: Date = Date()) {
@@ -223,6 +241,7 @@ final class AppModel: ObservableObject {
             notifications.deliver(event)
         }
         deliverLowBatteryAlertIfNeeded(at: date)
+        completeFirstRunIfReady()
     }
 
     func noteError(_ message: String) {
@@ -234,22 +253,27 @@ final class AppModel: ObservableObject {
     }
 
     func startMonitoring() {
+        hasStartedFirstConnection = true
         startMonitoringAction?()
     }
 
     func beginDeviceSelection() {
+        finishDeviceRescanProgress()
         beginDeviceSelectionAction?()
     }
 
     func cancelDeviceSelection() {
+        finishDeviceRescanProgress()
         cancelDeviceSelectionAction?()
     }
 
     func rescanDevices() {
+        beginDeviceRescanProgress()
         rescanDeviceSelectionAction?()
     }
 
     func selectDevice(_ id: UUID) {
+        finishDeviceRescanProgress()
         selectDeviceAction?(id)
     }
 
@@ -319,11 +343,7 @@ final class AppModel: ObservableObject {
 
     func refreshLoginItemStatus() {
         loginItemStatus = loginItems.currentStatus()
-        if loginItemStatus == .unavailable {
-            loginItemError = "Автозапуск недоступен для этой копии приложения"
-        } else {
-            loginItemError = nil
-        }
+        loginItemError = nil
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
@@ -332,7 +352,9 @@ final class AppModel: ObservableObject {
             loginItemError = nil
         } catch {
             loginItemStatus = loginItems.currentStatus()
-            loginItemError = error.localizedDescription
+            loginItemError = loginItemStatus == .unavailable
+                ? nil
+                : error.localizedDescription
         }
     }
 
@@ -351,7 +373,21 @@ final class AppModel: ObservableObject {
         isFirstRunComplete = true
     }
 
+    private func completeFirstRunIfReady() {
+        guard FirstRunReadiness.isSatisfied(
+            selectedID: selectedPeripheralID,
+            connection: connection,
+            power: power,
+            freshness: freshness,
+            powerConfirmedInCurrentSession: powerConfirmedInCurrentSession
+        ) else {
+            return
+        }
+        completeFirstRun()
+    }
+
     func resetForDeviceChange() {
+        finishDeviceRescanProgress()
         snapshot = DeviceSnapshot()
         power = .unknown
         freshness = .lost
@@ -369,6 +405,42 @@ final class AppModel: ObservableObject {
         notificationPolicy.resetForDeviceChange()
         lowBatteryAlertPolicy.resetForDeviceChange()
         outageTracker.reset()
+    }
+
+    private func beginDeviceRescanProgress() {
+        deviceRescanGeneration &+= 1
+        let generation = deviceRescanGeneration
+        awaitingDeviceRescanReset = true
+        deviceRescanBaselineIDs = Set(stationSelection.candidates.map(\.id))
+        isDeviceRescanInProgress = true
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + deviceRescanProgressDuration) { [weak self] in
+            guard let self, generation == self.deviceRescanGeneration else { return }
+            self.finishDeviceRescanProgress()
+        }
+    }
+
+    private func updateDeviceRescanProgress(for selection: StationSelectionSnapshot) {
+        guard isDeviceRescanInProgress else { return }
+        let candidateIDs = Set(selection.candidates.map(\.id))
+
+        if awaitingDeviceRescanReset {
+            awaitingDeviceRescanReset = false
+            deviceRescanBaselineIDs = candidateIDs
+            return
+        }
+
+        if selection.mode != .choosing || !candidateIDs.isSubset(of: deviceRescanBaselineIDs) {
+            finishDeviceRescanProgress()
+        }
+    }
+
+    private func finishDeviceRescanProgress() {
+        guard isDeviceRescanInProgress || awaitingDeviceRescanReset else { return }
+        deviceRescanGeneration &+= 1
+        awaitingDeviceRescanReset = false
+        deviceRescanBaselineIDs.removeAll(keepingCapacity: true)
+        isDeviceRescanInProgress = false
     }
 
     func copyDiagnostics() {

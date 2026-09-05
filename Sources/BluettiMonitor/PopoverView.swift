@@ -31,6 +31,19 @@ struct PopoverView: View {
 
         return PopoverViewState(
             screen: resolvedScreen,
+            firstConnectionPhase: FirstConnectionPresentation.resolve(
+                started: model.hasStartedFirstConnection,
+                bluetooth: model.bluetooth,
+                selection: model.stationSelection,
+                connection: model.connection,
+                power: model.power,
+                freshness: model.freshness,
+                powerConfirmedInCurrentSession: model.powerConfirmedInCurrentSession,
+                scanningFor: model.scanningFor,
+                hasConnectionError: model.lastError != nil,
+                isRescanning: model.isDeviceRescanInProgress
+            ),
+            isDeviceRescanInProgress: model.isDeviceRescanInProgress,
             deviceName: model.deviceName,
             deviceIdentity: deviceIdentity,
             bluetooth: model.bluetooth,
@@ -80,8 +93,10 @@ struct PopoverView: View {
 
     private var monitoringRecovery: MonitoringRecoveryAction? {
         switch model.bluetooth {
-        case .unauthorized, .poweredOff:
-            return .openBluetoothSettings
+        case .unauthorized:
+            return .openBluetoothPrivacySettings
+        case .poweredOff:
+            return .openBluetoothControlSettings
         case .unknown, .resetting, .unsupported:
             return nil
         case .poweredOn:
@@ -110,13 +125,21 @@ struct PopoverView: View {
                 if model.canCancelDeviceSelection { model.cancelDeviceSelection() }
                 route = .normal
             },
-            rescanDevices: { model.rescanDevices() },
+            rescanDevices: {
+                model.startMonitoring()
+                model.rescanDevices()
+            },
             selectDevice: { id in
+                model.startMonitoring()
                 model.selectDevice(id)
                 route = .normal
             },
-            reconnect: { model.reconnectAction?() },
-            openBluetoothSettings: { model.openBluetoothSettingsAction?() },
+            reconnect: {
+                model.startMonitoring()
+                model.reconnectAction?()
+            },
+            openBluetoothPrivacySettings: { model.openBluetoothPrivacySettingsAction?() },
+            openBluetoothControlSettings: { model.openBluetoothControlSettingsAction?() },
             performNotificationAction: { action in
                 switch action {
                 case .none:
@@ -133,10 +156,6 @@ struct PopoverView: View {
             clearNotificationResult: { model.clearNotificationActionResult() },
             setLaunchAtLogin: { enabled in model.setLaunchAtLogin(enabled) },
             openLoginItemSettings: { model.openLoginItemSettings() },
-            completeFirstRun: {
-                model.completeFirstRun()
-                route = .normal
-            },
             copyDiagnostics: { model.copyDiagnostics() },
             showAbout: { NSApp.orderFrontStandardAboutPanel(nil) },
             quit: { NSApp.terminate(nil) }

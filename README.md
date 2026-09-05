@@ -24,8 +24,9 @@ The app lives in the menu bar and uses a single icon slot. It does not open a Do
 3. Control-click the app, choose **Open**, and confirm the first launch.
 4. In the setup popover, choose **Find station** and allow Bluetooth when macOS asks.
 5. Select the station if more than one is found.
-6. Enable notifications if you want outage warnings. Setup can be completed without them.
-7. Optionally enable **Launch at login**, then choose **Done**.
+6. Wait for the app to confirm the station's current power state. The monitoring screen appears automatically when fresh data arrives.
+7. Enable notifications from the monitoring screen if you want outage warnings.
+8. Optionally open **Settings…** and enable **Launch at login**. Manual launch continues to work when login registration is unavailable.
 
 The current build requires macOS 13 or newer and an Apple silicon Mac. It is ad-hoc signed and not notarized, which is why the first launch needs the extra confirmation.
 

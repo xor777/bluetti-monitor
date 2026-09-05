@@ -28,7 +28,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let central = BluetoothCentral()
         session = BluettiDeviceSession(central: central, model: model)
         model.reconnectAction = { [weak session] in session?.reconnect() }
-        model.openBluetoothSettingsAction = { [weak central] in central?.openBluetoothSettings() }
+        model.openBluetoothPrivacySettingsAction = { [weak central] in
+            central?.openBluetoothPrivacySettings()
+        }
+        model.openBluetoothControlSettingsAction = { [weak central] in
+            central?.openBluetoothControlSettings()
+        }
         model.beginDeviceSelectionAction = { [weak session] in session?.beginDeviceSelection() }
         model.cancelDeviceSelectionAction = { [weak session] in session?.cancelDeviceSelection() }
         model.rescanDeviceSelectionAction = { [weak session] in session?.rescanDeviceSelection() }
