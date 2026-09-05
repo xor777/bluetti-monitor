@@ -4,7 +4,10 @@ import BluettiCore
 enum MenuBarIconRenderer {
     private static let size = NSSize(width: 20, height: 18)
 
-    static func image(for state: MenuBarPresentation.Icon) -> NSImage {
+    static func image(
+        for state: MenuBarPresentation.Icon,
+        accessibilityDescription: String
+    ) -> NSImage {
         let image = NSImage(size: size, flipped: false) { _ in
             NSGraphicsContext.current?.shouldAntialias = true
             NSColor.black.setStroke()
@@ -33,7 +36,7 @@ enum MenuBarIconRenderer {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "Состояние BLUETTI"
+        image.accessibilityDescription = accessibilityDescription
         return image
     }
 

@@ -15,7 +15,7 @@ When mains power goes out, the power station keeps the Mac running so smoothly t
 - a low-battery notification while the station is running without external power;
 - notifications when the connection to the device is lost or restored.
 
-The app lives in the menu bar and uses a single icon slot. It does not open a Dock window. Launch at login is available as an opt-in setting.
+The app lives in the menu bar and uses a single icon slot. It does not open a Dock window. Launch at login is available as an opt-in setting. The interface follows the macOS language and appearance by default; Settings also offers manual English or Russian and Light or Dark overrides. Changes apply immediately and persist across launches.
 
 ## Install
 
@@ -71,6 +71,12 @@ Render the real SwiftUI popover in deterministic light and dark fixtures:
 ```
 
 The PNG gallery and its manifest are written to `.artifacts/ui-previews`. Fixture rendering starts through a dedicated command-line branch and does not scan for Bluetooth devices, request permissions, register a login item, or send notifications.
+
+### Add a language
+
+Localization uses standard Foundation resources in `Sources/BluettiCore/Resources`. To add a language, create a `<language>.lproj` directory beside `en.lproj` and `ru.lproj`, then add complete translations for `Localizable.strings`, `Localizable.stringsdict`, and `InfoPlist.strings`. Keep every format placeholder and plural key aligned with the English files.
+
+No Swift language switch is needed. The Settings picker discovers localized resource directories and shows each language in its native name. Finish by running the tests, app build, app verifier, and preview renderer shown above; the tests check key and placeholder parity for every shipped localization, while the verifier checks that the resources still work in a copied standalone app.
 
 The repository also contains the original Python probe under `spike/`. It was used to understand the device protocol; the menu bar app itself is written in Swift.
 

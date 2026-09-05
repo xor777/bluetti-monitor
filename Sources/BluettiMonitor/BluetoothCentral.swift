@@ -16,7 +16,7 @@ protocol BluetoothCentralEvents: AnyObject {
     )
     func bluetoothNotificationsEnabled(epoch: UInt64)
     func bluetoothReceived(_ data: Data, epoch: UInt64)
-    func bluetoothDisconnected(epoch: UInt64, error: String?, attempt: Int)
+    func bluetoothDisconnected(epoch: UInt64, error: UserFacingError?, attempt: Int)
 }
 
 protocol PeripheralSelectionStoring: AnyObject {
@@ -379,8 +379,13 @@ final class BluetoothCentral: NSObject {
 
     private func failCurrent(_ error: Error?) {
         guard peripheral != nil else { return }
-        let message = error?.localizedDescription
-        logger.error("Connection ended, attempt \(self.reconnectAttempt + 1): \(message ?? "no detail", privacy: .public)")
+        let message: UserFacingError?
+        if error is ConnectionLifecycleError {
+            message = .connectionTimedOut
+        } else {
+            message = error.map { .system($0.localizedDescription) }
+        }
+        logger.error("Connection ended, attempt \(self.reconnectAttempt + 1): \(String(describing: error), privacy: .public)")
         events?.bluetoothDisconnected(
             epoch: epoch,
             error: message,
@@ -568,13 +573,6 @@ private struct PendingReconnect {
     let delay: TimeInterval
 }
 
-private enum ConnectionLifecycleError: LocalizedError {
+private enum ConnectionLifecycleError: Error {
     case timeout
-
-    var errorDescription: String? {
-        switch self {
-        case .timeout:
-            "Подключение не завершилось за 10 секунд"
-        }
-    }
 }

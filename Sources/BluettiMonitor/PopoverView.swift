@@ -7,12 +7,16 @@ struct PopoverView: View {
     @State private var route: PopoverScreen = .normal
 
     var body: some View {
+        let localizer = model.localizer
         TimelineView(.periodic(from: .now, by: 1)) { timeline in
             PopoverContentView(
                 state: makeState(now: timeline.date),
                 actions: actions
             )
         }
+        .environment(\.appLocalizer, localizer)
+        .environment(\.locale, localizer.locale)
+        .preferredColorScheme(model.appearancePreference.colorScheme)
         .onChange(of: model.isPopoverVisible) { visible in
             guard !visible else { return }
             if model.canCancelDeviceSelection {
@@ -75,8 +79,11 @@ struct PopoverView: View {
             selectionMode: model.stationSelection.mode,
             canCancelDeviceSelection: model.canCancelDeviceSelection,
             loginItemStatus: model.loginItemStatus,
-            loginItemError: model.loginItemError,
-            launchAtLogin: model.launchAtLoginToggleValue
+            loginItemError: model.loginItemError?.localized(using: model.localizer),
+            launchAtLogin: model.launchAtLoginToggleValue,
+            languagePreference: model.languagePreference,
+            languageOptions: model.availableLanguageOptions,
+            appearancePreference: model.appearancePreference
         )
     }
 
@@ -156,6 +163,8 @@ struct PopoverView: View {
             clearNotificationResult: { model.clearNotificationActionResult() },
             setLaunchAtLogin: { enabled in model.setLaunchAtLogin(enabled) },
             openLoginItemSettings: { model.openLoginItemSettings() },
+            setLanguage: { model.setLanguage($0) },
+            setAppearance: { model.setAppearance($0) },
             copyDiagnostics: { model.copyDiagnostics() },
             showAbout: { NSApp.orderFrontStandardAboutPanel(nil) },
             quit: { NSApp.terminate(nil) }
@@ -172,11 +181,11 @@ struct PopoverView: View {
         guard model.connection != .connected || model.freshness != .fresh,
               model.bluetooth == .poweredOn,
               model.connection == .disconnected,
-              model.lastError?.localizedCaseInsensitiveContains("BLUETTI") == true
+              model.lastError == .bluetoothMayBeInUse
         else {
             return nil
         }
-        return "Проверьте, не подключено ли приложение BLUETTI на телефоне"
+        return model.lastError?.localized(using: model.localizer)
     }
 
     private func shortIdentity(_ id: UUID) -> String {

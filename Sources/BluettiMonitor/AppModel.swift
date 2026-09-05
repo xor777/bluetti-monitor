@@ -4,8 +4,9 @@ import Combine
 import Foundation
 
 enum NotificationActionResult: Equatable, Sendable {
-    case success(String)
-    case failure(String)
+    case success(UserFacingConfirmation)
+    case failure(UserFacingError)
+    case unavailable(NotificationHealth)
 }
 
 @MainActor
@@ -18,7 +19,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var lastUpdate: Date?
     @Published private(set) var lastTransition: Date?
     @Published private(set) var outageStartedAt: Date?
-    @Published private(set) var lastError: String?
+    @Published private(set) var lastError: UserFacingError?
     @Published private(set) var notificationHealth: NotificationHealth = .unknown
     @Published private(set) var scanningFor: TimeInterval = 0
     @Published private(set) var isPopoverVisible = false
@@ -29,14 +30,18 @@ final class AppModel: ObservableObject {
         mode: .initialDiscovery
     )
     @Published private(set) var loginItemStatus: LoginItemStatus = .unknown
-    @Published private(set) var loginItemError: String?
+    @Published private(set) var loginItemError: UserFacingError?
     @Published private(set) var notificationActionResult: NotificationActionResult?
     @Published private(set) var isFirstRunComplete: Bool
     @Published private(set) var hasStartedFirstConnection = false
     @Published private(set) var isDeviceRescanInProgress = false
+    @Published private(set) var languagePreference: LanguagePreference
+    @Published private(set) var appearancePreference: AppearancePreference
 
     private let notifications: any NotificationServicing
     private let loginItems: any LoginItemManaging
+    private let preferences: AppPreferencesStore
+    private let preferredLanguages: () -> [String]
     var reconnectAction: (() -> Void)?
     var openBluetoothPrivacySettingsAction: (() -> Void)?
     var openBluetoothControlSettingsAction: (() -> Void)?
@@ -65,11 +70,17 @@ final class AppModel: ObservableObject {
         notifications: any NotificationServicing,
         loginItems: any LoginItemManaging,
         isFirstRunComplete: Bool,
+        preferences: AppPreferencesStore = AppPreferencesStore(),
+        preferredLanguages: @escaping () -> [String] = { Locale.preferredLanguages },
         deviceRescanProgressDuration: TimeInterval = 3
     ) {
         self.notifications = notifications
         self.loginItems = loginItems
         self.isFirstRunComplete = isFirstRunComplete
+        self.preferences = preferences
+        self.preferredLanguages = preferredLanguages
+        languagePreference = preferences.language
+        appearancePreference = preferences.appearance
         self.deviceRescanProgressDuration = deviceRescanProgressDuration
         notifications.healthChanged = { [weak self] health in
             guard let self else { return }
@@ -83,9 +94,7 @@ final class AppModel: ObservableObject {
             }
         }
         notifications.schedulingFailed = { [weak self] detail in
-            self?.notificationActionResult = .failure(
-                "Не удалось запланировать уведомление: \(detail)"
-            )
+            self?.notificationActionResult = .failure(.notificationSchedulingFailed(detail))
         }
     }
 
@@ -99,11 +108,11 @@ final class AppModel: ObservableObject {
             scanningFor: scanningFor,
             inputPower: snapshot.acInputPower,
             outputPower: snapshot.acOutputPower
-        ))
+        ), localizer: localizer)
     }
 
     var notificationReadiness: NotificationReadinessPresentation {
-        NotificationReadinessPresentation.make(notificationHealth)
+        NotificationReadinessPresentation.make(notificationHealth, localizer: localizer)
     }
 
     var lowBatteryVisualState: LowBatteryVisualState {
@@ -118,6 +127,32 @@ final class AppModel: ObservableObject {
     }
     var launchAtLoginToggleValue: Bool {
         loginItemStatus == .enabled || loginItemStatus == .requiresApproval
+    }
+
+    var localizer: AppLocalizer {
+        AppLocalizer(
+            language: languagePreference,
+            preferredLanguages: preferredLanguages()
+        )
+    }
+
+    var availableLanguageOptions: [LanguageOption] {
+        AppLocalizer.availableLanguageOptions
+    }
+
+    func setLanguage(_ language: LanguagePreference) {
+        preferences.language = language
+        languagePreference = language
+    }
+
+    func setAppearance(_ appearance: AppearancePreference) {
+        preferences.appearance = appearance
+        appearancePreference = appearance
+    }
+
+    func refreshSystemLanguage() {
+        guard languagePreference == .system else { return }
+        objectWillChange.send()
     }
 
     var deviceName: String {
@@ -195,20 +230,20 @@ final class AppModel: ObservableObject {
         freshness = .fresh
         lastError = nil
         if let event = notificationPolicy.monitoringReady() {
-            notifications.deliver(event)
+            notifications.deliver(event, localizer: localizer)
         }
         completeFirstRunIfReady()
     }
 
-    func monitoringLost(error: String?) {
+    func monitoringLost(error: UserFacingError?) {
         connection = .disconnected
         freshness = .lost
         powerConfirmedInCurrentSession = false
         batteryObservedInCurrentSession = false
         lastBatteryUpdate = nil
-        if let error, !error.isEmpty { lastError = error }
+        if let error { lastError = error }
         if let event = notificationPolicy.monitoringLost() {
-            notifications.deliver(event)
+            notifications.deliver(event, localizer: localizer)
         }
     }
 
@@ -238,13 +273,13 @@ final class AppModel: ObservableObject {
             transition,
             batteryPercent: currentValidBatteryPercentForNotification(at: date)
         ) {
-            notifications.deliver(event)
+            notifications.deliver(event, localizer: localizer)
         }
         deliverLowBatteryAlertIfNeeded(at: date)
         completeFirstRunIfReady()
     }
 
-    func noteError(_ message: String) {
+    func noteError(_ message: UserFacingError) {
         lastError = message
     }
 
@@ -291,18 +326,14 @@ final class AppModel: ObservableObject {
                     health = try await notifications.requestAuthorization()
                 }
                 guard health == .available else {
-                    notificationActionResult = .failure(
-                        NotificationReadinessPresentation.make(health).detail
-                    )
+                    notificationActionResult = .unavailable(health)
                     return
                 }
-                try await notifications.schedule(.test)
-                notificationActionResult = .success(
-                    "Тестовое уведомление запланировано в macOS"
-                )
+                try await notifications.schedule(.test, localizer: localizer)
+                notificationActionResult = .success(.notificationScheduled)
             } catch {
                 notificationActionResult = .failure(
-                    "Не удалось запланировать уведомление: \(error.localizedDescription)"
+                    .notificationSchedulingFailed(error.localizedDescription)
                 )
             }
         }
@@ -315,15 +346,13 @@ final class AppModel: ObservableObject {
             do {
                 let health = try await notifications.requestAuthorization()
                 if health == .available {
-                    notificationActionResult = .success("Уведомления разрешены")
+                    notificationActionResult = .success(.notificationsAllowed)
                 } else {
-                    notificationActionResult = .failure(
-                        NotificationReadinessPresentation.make(health).detail
-                    )
+                    notificationActionResult = .unavailable(health)
                 }
             } catch {
                 notificationActionResult = .failure(
-                    "Не удалось запросить разрешение: \(error.localizedDescription)"
+                    .notificationPermissionFailed(error.localizedDescription)
                 )
             }
         }
@@ -354,7 +383,7 @@ final class AppModel: ObservableObject {
             loginItemStatus = loginItems.currentStatus()
             loginItemError = loginItemStatus == .unavailable
                 ? nil
-                : error.localizedDescription
+                : .system(error.localizedDescription)
         }
     }
 
@@ -466,7 +495,7 @@ final class AppModel: ObservableObject {
             "Связь: \(connection)",
             "Питание: \(power)",
             "Обновлено: \(updated)",
-            "Ошибка: \(lastError ?? "—")",
+            "Ошибка: \(lastError?.diagnosticDetail ?? "—")",
         ].joined(separator: "\n")
     }
 
@@ -486,7 +515,7 @@ final class AppModel: ObservableObject {
 
     private func deliverLowBatteryAlertIfNeeded(at date: Date) {
         if let event = lowBatteryAlertPolicy.evaluate(lowBatteryInput(at: date)) {
-            notifications.deliver(event)
+            notifications.deliver(event, localizer: localizer)
         }
     }
 

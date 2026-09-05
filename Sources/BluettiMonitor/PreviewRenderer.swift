@@ -13,13 +13,27 @@ enum PreviewRenderer {
         )
 
         var manifest: [String] = []
-        for fixture in PreviewFixture.all {
+        for language in PreviewLanguage.allCases {
+            let localizer = language.localizer
             for theme in PreviewTheme.allCases {
-                let filename = "\(fixture.name)-\(theme.rawValue).png"
-                let destination = outputDirectory.appendingPathComponent(filename)
-                let size = try render(fixture.state, theme: theme, to: destination)
-                manifest.append("\(filename)\t\(Int(size.width))x\(Int(size.height)) points")
-                print(destination.path)
+                for fixture in PreviewFixture.all(
+                    localizer: localizer,
+                    language: language.preference,
+                    appearance: theme.preference
+                ) {
+                    let filename = "\(language.rawValue)-\(theme.rawValue)-\(fixture.name).png"
+                    let destination = outputDirectory.appendingPathComponent(filename)
+                    let size = try render(
+                        fixture.state,
+                        theme: theme,
+                        localizer: localizer,
+                        to: destination
+                    )
+                    manifest.append(
+                        "\(filename)\t\(Int(size.width))x\(Int(size.height)) points"
+                    )
+                    print(destination.path)
+                }
             }
         }
 
@@ -37,6 +51,7 @@ enum PreviewRenderer {
     private static func render(
         _ state: PopoverViewState,
         theme: PreviewTheme,
+        localizer: AppLocalizer,
         to destination: URL
     ) throws -> NSSize {
         let background = theme == .dark
@@ -44,7 +59,8 @@ enum PreviewRenderer {
             : Color(nsColor: NSColor(calibratedWhite: 0.965, alpha: 1))
         let content = PopoverContentView(state: state, actions: .none)
             .environment(\.colorScheme, theme.colorScheme)
-            .environment(\.locale, Locale(identifier: "ru_RU"))
+            .environment(\.appLocalizer, localizer)
+            .environment(\.locale, localizer.locale)
             .background(background)
         let hostingController = NSHostingController(rootView: AnyView(content))
         hostingController.sizingOptions = [.preferredContentSize]
@@ -113,18 +129,28 @@ enum PreviewRenderer {
     }
 
     private static func verifyAdaptiveHostingSize() throws {
-        guard let normal = PreviewFixture.all.first(where: { $0.name == "healthy" }),
-              let settings = PreviewFixture.all.first(where: { $0.name == "settings-login-unavailable" })
+        let localizer = PreviewLanguage.english.localizer
+        let fixtures = PreviewFixture.all(
+            localizer: localizer,
+            language: .language("en"),
+            appearance: .light
+        )
+        guard let normal = fixtures.first(where: { $0.name == "healthy" }),
+              let settings = fixtures.first(where: { $0.name == "settings-login-unavailable" })
         else {
             throw PreviewRendererError.invalidAdaptiveSize
         }
 
         let controller = NSHostingController(
-            rootView: AnyView(previewContent(normal.state, theme: .light))
+            rootView: AnyView(
+                previewContent(normal.state, theme: .light, localizer: localizer)
+            )
         )
         controller.sizingOptions = [.preferredContentSize]
         let normalSize = measuredSize(of: controller)
-        controller.rootView = AnyView(previewContent(settings.state, theme: .light))
+        controller.rootView = AnyView(
+            previewContent(settings.state, theme: .light, localizer: localizer)
+        )
         let settingsSize = measuredSize(of: controller)
 
         guard normalSize.height > 0,
@@ -154,11 +180,13 @@ enum PreviewRenderer {
 
     private static func previewContent(
         _ state: PopoverViewState,
-        theme: PreviewTheme
+        theme: PreviewTheme,
+        localizer: AppLocalizer
     ) -> some View {
         PopoverContentView(state: state, actions: .none)
             .environment(\.colorScheme, theme.colorScheme)
-            .environment(\.locale, Locale(identifier: "ru_RU"))
+            .environment(\.appLocalizer, localizer)
+            .environment(\.locale, localizer.locale)
     }
 }
 
@@ -169,13 +197,29 @@ private enum PreviewTheme: String, CaseIterable {
     var colorScheme: ColorScheme {
         self == .light ? .light : .dark
     }
+
+    var preference: AppearancePreference {
+        self == .light ? .light : .dark
+    }
+}
+
+private enum PreviewLanguage: String, CaseIterable {
+    case english = "en"
+    case russian = "ru"
+
+    var preference: LanguagePreference { .language(rawValue) }
+    var localizer: AppLocalizer { AppLocalizer(language: preference) }
 }
 
 private struct PreviewFixture {
     let name: String
     let state: PopoverViewState
 
-    static let all: [PreviewFixture] = {
+    static func all(
+        localizer: AppLocalizer,
+        language: LanguagePreference,
+        appearance: AppearancePreference
+    ) -> [PreviewFixture] {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let current = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
         let office = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
@@ -261,7 +305,7 @@ private struct PreviewFixture {
                 scanningFor: scanningFor,
                 inputPower: snapshot.acInputPower,
                 outputPower: snapshot.acOutputPower
-            ))
+            ), localizer: localizer)
             return PopoverViewState(
                 screen: screen,
                 firstConnectionPhase: FirstConnectionPresentation.resolve(
@@ -289,7 +333,7 @@ private struct PreviewFixture {
                 batteryVisualState: batteryState,
                 monitoringDetail: monitoringDetail,
                 monitoringRecovery: monitoringRecovery,
-                notificationReadiness: .make(notificationHealth),
+                notificationReadiness: .make(notificationHealth, localizer: localizer),
                 notificationActionResult: notificationResult,
                 lastUpdate: lastUpdateAge.map { now.addingTimeInterval(-$0) },
                 outageStartedAt: outageStartedAt,
@@ -302,7 +346,10 @@ private struct PreviewFixture {
                 canCancelDeviceSelection: canCancelSelection,
                 loginItemStatus: loginStatus,
                 loginItemError: loginError,
-                launchAtLogin: launchAtLogin
+                launchAtLogin: launchAtLogin,
+                languagePreference: language,
+                languageOptions: AppLocalizer.availableLanguageOptions,
+                appearancePreference: appearance
             )
         }
 
@@ -411,7 +458,7 @@ private struct PreviewFixture {
                     ),
                     powerConfirmed: false,
                     batteryState: .unavailable,
-                    monitoringDetail: "Проверьте, не подключено ли приложение BLUETTI на телефоне",
+                    monitoringDetail: localizer.text("error.bluetoothMayBeInUse"),
                     monitoringRecovery: .reconnect,
                     lastUpdateAge: 125
                 )
@@ -515,7 +562,7 @@ private struct PreviewFixture {
                     stationCandidates: [],
                     selectionMode: .initialDiscovery,
                     loginStatus: .unavailable,
-                    loginError: "Автозапуск сейчас недоступен"
+                    loginError: localizer.text("login.status.unavailable")
                 )
             ),
             PreviewFixture(
@@ -628,7 +675,7 @@ private struct PreviewFixture {
                     snapshot: DeviceSnapshot(model: "PR100V2"),
                     powerConfirmed: false,
                     batteryState: .unavailable,
-                    monitoringDetail: "Проверьте, не подключено ли приложение BLUETTI на телефоне",
+                    monitoringDetail: localizer.text("error.bluetoothMayBeInUse"),
                     hasConnectionError: true,
                     lastUpdateAge: nil,
                     selectedID: current,
@@ -645,7 +692,7 @@ private struct PreviewFixture {
                 state: make(
                     screen: .settings,
                     loginStatus: .unavailable,
-                    loginError: "Автозапуск сейчас недоступен"
+                    loginError: localizer.text("login.status.unavailable")
                 )
             ),
             PreviewFixture(
@@ -657,7 +704,7 @@ private struct PreviewFixture {
                 )
             ),
         ]
-    }()
+    }
 }
 
 private enum PreviewRendererError: LocalizedError {
@@ -667,9 +714,9 @@ private enum PreviewRendererError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case let .couldNotEncode(filename):
-            "Не удалось отрисовать \(filename)"
+            "Could not render \(filename)"
         case .invalidAdaptiveSize:
-            "Высота SwiftUI popover не обновилась при смене экрана"
+            "SwiftUI popover height did not update after changing screens"
         }
     }
 }

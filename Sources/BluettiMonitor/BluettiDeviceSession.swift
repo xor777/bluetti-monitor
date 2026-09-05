@@ -108,15 +108,15 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
                 try process(frame, epoch: epoch)
             }
         } catch {
-            failSession("Ошибка протокола: \(short(error))")
+            failSession(.protocolFailure(short(error)))
         }
     }
 
-    func bluetoothDisconnected(epoch: UInt64, error: String?, attempt: Int) {
+    func bluetoothDisconnected(epoch: UInt64, error: UserFacingError?, attempt: Int) {
         guard epoch == activeEpoch else { return }
-        let message: String?
+        let message: UserFacingError?
         if attempt >= 3 {
-            message = "Проверьте, не подключено ли приложение BLUETTI"
+            message = .bluetoothMayBeInUse
         } else {
             message = error
         }
@@ -224,7 +224,7 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
         let now = ProcessInfo.processInfo.systemUptime
 
         if coordinator.expireIfNeeded(now: now) {
-            model?.noteError("Нет ответа от устройства")
+            model?.noteError(.deviceDidNotRespond)
         }
 
         let sampleOrigin = lastVoltageAt ?? handshakeReadyAt
@@ -232,7 +232,7 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
             let newFreshness = timing.freshness(age: now - sampleOrigin)
             setFreshness(newFreshness)
             if newFreshness == .lost {
-                failSession("Нет данных от устройства")
+                failSession(.deviceStoppedResponding)
                 return
             }
         }
@@ -267,7 +267,7 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
             }
         } catch {
             coordinator.reset()
-            model?.noteError(short(error))
+            model?.noteError(.system(short(error)))
         }
     }
 
@@ -287,13 +287,13 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
         model?.setFreshness(value)
     }
 
-    private func failSession(_ message: String) {
-        logger.error("Session failed: \(message, privacy: .public)")
+    private func failSession(_ message: UserFacingError) {
+        logger.error("Session failed: \(message.diagnosticDetail, privacy: .public)")
         monitoringGap(error: message)
         central.reconnectAfterFailure()
     }
 
-    private func monitoringGap(error: String?) {
+    private func monitoringGap(error: UserFacingError?) {
         endMonitoring()
         powerDetector.beginMonitoringSession()
         model?.monitoringLost(error: error)

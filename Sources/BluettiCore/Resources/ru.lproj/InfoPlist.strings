@@ -1,0 +1,2 @@
+"CFBundleDisplayName" = "Bluetti Monitor";
+"NSBluetoothAlwaysUsageDescription" = "Приложению нужен Bluetooth для локального чтения состояния BLUETTI.";

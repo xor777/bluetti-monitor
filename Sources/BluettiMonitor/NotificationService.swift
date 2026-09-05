@@ -12,8 +12,8 @@ protocol NotificationServicing: AnyObject {
     func prepare() async
     func requestAuthorization() async throws -> NotificationHealth
     func refreshHealth() async
-    func deliver(_ event: NotificationEvent)
-    func schedule(_ event: NotificationEvent) async throws
+    func deliver(_ event: NotificationEvent, localizer: AppLocalizer)
+    func schedule(_ event: NotificationEvent, localizer: AppLocalizer) async throws
     func openSettings()
 }
 
@@ -51,11 +51,11 @@ final class NotificationService: NSObject, NotificationServicing {
         healthChanged?(health(from: await center.notificationSettings()))
     }
 
-    func deliver(_ event: NotificationEvent) {
+    func deliver(_ event: NotificationEvent, localizer: AppLocalizer) {
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await schedule(event)
+                try await schedule(event, localizer: localizer)
             } catch {
                 logger.error("Notification failed: \(String(describing: error), privacy: .public)")
                 schedulingFailed?(error.localizedDescription)
@@ -63,15 +63,16 @@ final class NotificationService: NSObject, NotificationServicing {
         }
     }
 
-    func schedule(_ event: NotificationEvent) async throws {
-        let request = makeRequest(event)
+    func schedule(_ event: NotificationEvent, localizer: AppLocalizer) async throws {
+        let localized = event.content(using: localizer)
+        let request = makeRequest(event, content: localized)
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Void, any Error>) in
             center.add(request) { [logger] error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {
-                    logger.info("Notification scheduled: \(event.title, privacy: .public)")
+                    logger.info("Notification scheduled: \(localized.title, privacy: .public)")
                     continuation.resume()
                 }
             }
@@ -83,10 +84,13 @@ final class NotificationService: NSObject, NotificationServicing {
         NSWorkspace.shared.open(url)
     }
 
-    private func makeRequest(_ event: NotificationEvent) -> UNNotificationRequest {
+    private func makeRequest(
+        _ event: NotificationEvent,
+        content localized: LocalizedNotificationContent
+    ) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
-        content.title = event.title
-        if let body = event.body {
+        content.title = localized.title
+        if let body = localized.body {
             content.body = body
         }
         if event.playsSound { content.sound = .default }

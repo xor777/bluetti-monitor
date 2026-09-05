@@ -1,0 +1,2 @@
+"CFBundleDisplayName" = "Bluetti Monitor";
+"NSBluetoothAlwaysUsageDescription" = "Bluetti Monitor needs Bluetooth to read the local status of your BLUETTI station.";

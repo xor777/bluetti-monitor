@@ -10,28 +10,37 @@ public enum NotificationEvent: Equatable, Sendable {
     case test
 
     public var title: String {
-        switch self {
-        case .powerLost: "Питание пропало"
-        case .powerAbsent: "Питание отсутствует"
-        case .powerRestored: "Питание восстановлено"
-        case .lowBattery: "Низкий заряд станции"
-        case .connectionLost: "Связь с устройством потеряна"
-        case .connectionRestored: "Связь восстановлена"
-        case .test: "Тест уведомления"
-        }
+        content(using: AppLocalizer()).title
     }
 
     public var body: String? {
+        content(using: AppLocalizer()).body
+    }
+
+    public func content(using localizer: AppLocalizer) -> LocalizedNotificationContent {
+        let titleKey: String
+        switch self {
+        case .powerLost: titleKey = "notification.powerLost.title"
+        case .powerAbsent: titleKey = "notification.powerAbsent.title"
+        case .powerRestored: titleKey = "notification.powerRestored.title"
+        case .lowBattery: titleKey = "notification.lowBattery.title"
+        case .connectionLost: titleKey = "notification.connectionLost.title"
+        case .connectionRestored: titleKey = "notification.connectionRestored.title"
+        case .test: titleKey = "notification.test.title"
+        }
+
+        let body: String?
         switch self {
         case let .powerLost(batteryPercent), let .powerAbsent(batteryPercent):
-            batteryPercent.map { "Заряд станции: \($0)%" }
+            body = batteryPercent.map { localizer.format("notification.stationCharge", Int64($0)) }
         case let .lowBattery(batteryPercent):
-            "Заряд станции: \(batteryPercent)%. Сохраните работу."
+            body = localizer.format("notification.lowBattery.body", Int64(batteryPercent))
         case .test:
-            "Если вы видите этот баннер, macOS показывает уведомления."
+            body = localizer.text("notification.test.body")
         case .powerRestored, .connectionLost, .connectionRestored:
-            nil
+            body = nil
         }
+        return LocalizedNotificationContent(title: localizer.text(titleKey), body: body)
     }
 
     public var playsSound: Bool {
@@ -41,6 +50,16 @@ public enum NotificationEvent: Equatable, Sendable {
         case .powerRestored, .connectionRestored, .test:
             false
         }
+    }
+}
+
+public struct LocalizedNotificationContent: Equatable, Sendable {
+    public let title: String
+    public let body: String?
+
+    public init(title: String, body: String?) {
+        self.title = title
+        self.body = body
     }
 }
 
@@ -174,40 +193,43 @@ public struct NotificationReadinessPresentation: Equatable, Sendable {
     public let action: NotificationReadinessAction
     public let canScheduleMonitoringAlerts: Bool
 
-    public static func make(_ health: NotificationHealth) -> NotificationReadinessPresentation {
+    public static func make(
+        _ health: NotificationHealth,
+        localizer: AppLocalizer = AppLocalizer()
+    ) -> NotificationReadinessPresentation {
         switch health {
         case .unknown:
             NotificationReadinessPresentation(
-                title: "Уведомления не проверены",
-                detail: "Статус macOS пока неизвестен",
+                title: localizer.text("notifications.readiness.unknown.title"),
+                detail: localizer.text("notifications.readiness.unknown.detail"),
                 action: .refresh,
                 canScheduleMonitoringAlerts: false
             )
         case .notDetermined:
             NotificationReadinessPresentation(
-                title: "Уведомления не настроены",
-                detail: "Разрешите уведомления, чтобы узнать об отключении питания",
+                title: localizer.text("notifications.readiness.notDetermined.title"),
+                detail: localizer.text("notifications.readiness.notDetermined.detail"),
                 action: .requestAuthorization,
                 canScheduleMonitoringAlerts: false
             )
         case .denied:
             NotificationReadinessPresentation(
-                title: "Уведомления запрещены",
-                detail: "Разрешите их в настройках macOS",
+                title: localizer.text("notifications.readiness.denied.title"),
+                detail: localizer.text("notifications.readiness.denied.detail"),
                 action: .openSystemSettings,
                 canScheduleMonitoringAlerts: false
             )
         case .alertsDisabled:
             NotificationReadinessPresentation(
-                title: "Баннеры уведомлений выключены",
-                detail: "Включите баннеры в настройках macOS",
+                title: localizer.text("notifications.readiness.alertsDisabled.title"),
+                detail: localizer.text("notifications.readiness.alertsDisabled.detail"),
                 action: .openSystemSettings,
                 canScheduleMonitoringAlerts: false
             )
         case .available:
             NotificationReadinessPresentation(
-                title: "Уведомления готовы",
-                detail: "macOS может показать баннеры",
+                title: localizer.text("notifications.readiness.available.title"),
+                detail: localizer.text("notifications.readiness.available.detail"),
                 action: .none,
                 canScheduleMonitoringAlerts: true
             )

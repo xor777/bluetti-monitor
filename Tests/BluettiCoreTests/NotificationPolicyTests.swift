@@ -6,23 +6,23 @@ func notificationPolicyTests() -> [TestCase] {
         ("startup offline uses concise absent copy", {
             var policy = NotificationPolicy()
             try expectEqual(policy.handle(.initial(.offline)), .powerAbsent(batteryPercent: nil))
-            try expectEqual(NotificationEvent.powerAbsent(batteryPercent: nil).title, "Питание отсутствует")
+            try expectEqual(NotificationEvent.powerAbsent(batteryPercent: nil).russianTitle, "Питание отсутствует")
         }),
         ("online to offline uses concise loss copy", {
             var policy = NotificationPolicy()
             try expectEqual(policy.handle(.changed(from: .online, to: .offline)), .powerLost(batteryPercent: nil))
-            try expectEqual(NotificationEvent.powerLost(batteryPercent: nil).title, "Питание пропало")
+            try expectEqual(NotificationEvent.powerLost(batteryPercent: nil).russianTitle, "Питание пропало")
         }),
         ("outage copy includes only provided current battery charge", {
             var policy = NotificationPolicy()
             let event = policy.handle(.changed(from: .online, to: .offline), batteryPercent: 19)
             try expectEqual(event, .powerLost(batteryPercent: 19))
-            try expectEqual(event?.body, "Заряд станции: 19%")
+            try expectEqual(event?.russianBody, "Заряд станции: 19%")
         }),
         ("offline to online uses concise restored copy", {
             var policy = NotificationPolicy()
             try expectEqual(policy.handle(.changed(from: .offline, to: .online)), .powerRestored)
-            try expectEqual(NotificationEvent.powerRestored.title, "Питание восстановлено")
+            try expectEqual(NotificationEvent.powerRestored.russianTitle, "Питание восстановлено")
         }),
         ("initial online state stays quiet", {
             var policy = NotificationPolicy()
@@ -34,7 +34,7 @@ func notificationPolicyTests() -> [TestCase] {
             try expectNil(policy.monitoringReady())
             try expectEqual(policy.monitoringLost(), .connectionLost)
             try expectNil(policy.monitoringLost())
-            try expectEqual(NotificationEvent.connectionLost.title, "Связь с устройством потеряна")
+            try expectEqual(NotificationEvent.connectionLost.russianTitle, "Связь с устройством потеряна")
         }),
         ("reconnection notification follows a notified loss", {
             var policy = NotificationPolicy()
@@ -42,7 +42,7 @@ func notificationPolicyTests() -> [TestCase] {
             _ = policy.monitoringLost()
             try expectEqual(policy.monitoringReady(), .connectionRestored)
             try expectNil(policy.monitoringReady())
-            try expectEqual(NotificationEvent.connectionRestored.title, "Связь восстановлена")
+            try expectEqual(NotificationEvent.connectionRestored.russianTitle, "Связь восстановлена")
         }),
         ("device reset clears connection notification episode", {
             var policy = NotificationPolicy()
@@ -53,7 +53,7 @@ func notificationPolicyTests() -> [TestCase] {
             try expectNil(policy.monitoringReady())
         }),
         ("test notification copy stays concise", {
-            try expectEqual(NotificationEvent.test.title, "Тест уведомления")
+            try expectEqual(NotificationEvent.test.russianTitle, "Тест уведомления")
         }),
         ("low battery fires once only for fresh current-session offline state", {
             var policy = LowBatteryAlertPolicy()
@@ -75,7 +75,7 @@ func notificationPolicyTests() -> [TestCase] {
             )
             try expectEqual(policy.evaluate(eligible), .lowBattery(batteryPercent: 20))
             try expectEqual(
-                NotificationEvent.lowBattery(batteryPercent: 20).body,
+                NotificationEvent.lowBattery(batteryPercent: 20).russianBody,
                 "Заряд станции: 20%. Сохраните работу."
             )
             try expectNil(policy.evaluate(eligible))
@@ -144,21 +144,28 @@ func notificationPolicyTests() -> [TestCase] {
             )), .unavailable)
         }),
         ("notification readiness distinguishes request, blocked and available states", {
-            let request = NotificationReadinessPresentation.make(.notDetermined)
+            let request = NotificationReadinessPresentation.make(.notDetermined, localizer: russianLocalizer)
             try expectEqual(request.action, .requestAuthorization)
             try expectEqual(request.canScheduleMonitoringAlerts, false)
 
-            let denied = NotificationReadinessPresentation.make(.denied)
+            let denied = NotificationReadinessPresentation.make(.denied, localizer: russianLocalizer)
             try expectEqual(denied.action, .openSystemSettings)
             try expectEqual(denied.canScheduleMonitoringAlerts, false)
 
-            let alertsDisabled = NotificationReadinessPresentation.make(.alertsDisabled)
+            let alertsDisabled = NotificationReadinessPresentation.make(.alertsDisabled, localizer: russianLocalizer)
             try expectEqual(alertsDisabled.action, .openSystemSettings)
             try expectEqual(alertsDisabled.detail, "Включите баннеры в настройках macOS")
 
-            let available = NotificationReadinessPresentation.make(.available)
+            let available = NotificationReadinessPresentation.make(.available, localizer: russianLocalizer)
             try expectEqual(available.canScheduleMonitoringAlerts, true)
             try expectEqual(available.detail, "macOS может показать баннеры")
         }),
     ]
+}
+
+private let russianLocalizer = AppLocalizer(language: .language("ru"))
+
+private extension NotificationEvent {
+    var russianTitle: String { content(using: russianLocalizer).title }
+    var russianBody: String? { content(using: russianLocalizer).body }
 }

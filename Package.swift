@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "BluettiMonitor",
+    defaultLocalization: "en",
     platforms: [.macOS(.v13)],
     products: [
         .library(name: "BluettiCore", targets: ["BluettiCore"]),
@@ -11,7 +12,10 @@ let package = Package(
         .executable(name: "BluettiCoreTests", targets: ["BluettiCoreTests"]),
     ],
     targets: [
-        .target(name: "BluettiCore"),
+        .target(
+            name: "BluettiCore",
+            resources: [.process("Resources")]
+        ),
         .executableTarget(
             name: "BluettiMonitor",
             dependencies: ["BluettiCore"],

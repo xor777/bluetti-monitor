@@ -45,18 +45,21 @@ public struct StatusPresentation: Equatable, Sendable {
     public let inputFlowActive: Bool
     public let outputFlowActive: Bool
 
-    public static func make(_ context: StatusContext) -> StatusPresentation {
+    public static func make(
+        _ context: StatusContext,
+        localizer: AppLocalizer = AppLocalizer()
+    ) -> StatusPresentation {
         switch context.bluetooth {
         case .poweredOff:
-            return inactive("Bluetooth выключен", "Мониторинг остановлен", .unavailable)
+            return inactive("status.bluetooth.off.title", "status.bluetooth.off.subtitle", .unavailable, localizer)
         case .unauthorized:
-            return inactive("Нет доступа к Bluetooth", "Разрешите доступ в настройках", .unavailable)
+            return inactive("status.bluetooth.unauthorized.title", "status.bluetooth.unauthorized.subtitle", .unavailable, localizer)
         case .unsupported:
-            return inactive("Bluetooth недоступен", "Этот Mac не поддерживается", .unavailable)
+            return inactive("status.bluetooth.unsupported.title", "status.bluetooth.unsupported.subtitle", .unavailable, localizer)
         case .resetting:
-            return inactive("Bluetooth перезапускается", "Подождите", .neutral)
+            return inactive("status.bluetooth.resetting.title", "status.bluetooth.resetting.subtitle", .neutral, localizer)
         case .unknown:
-            return inactive("Подготовка", "Проверяем Bluetooth", .neutral)
+            return inactive("status.bluetooth.unknown.title", "status.bluetooth.unknown.subtitle", .neutral, localizer)
         case .poweredOn:
             break
         }
@@ -64,32 +67,32 @@ public struct StatusPresentation: Equatable, Sendable {
         switch context.connection {
         case .scanning:
             if context.scanningFor >= 10 {
-                return inactive("Устройство не найдено", "Поиск продолжается", .unavailable)
+                return inactive("status.scanning.notFound.title", "status.scanning.notFound.subtitle", .unavailable, localizer)
             }
-            return inactive("Поиск устройства", "Ищем Premium 100 V2", .neutral)
+            return inactive("status.scanning.title", "status.scanning.subtitle", .neutral, localizer)
         case .connecting:
-            return inactive("Подключение", "Устанавливаем защищённую связь", .neutral)
+            return inactive("status.connecting.title", "status.connecting.subtitle", .neutral, localizer)
         case .disconnected:
-            return inactive("Нет связи", "Переподключаемся", .unavailable)
+            return inactive("status.disconnected.title", "status.disconnected.subtitle", .unavailable, localizer)
         case .connected:
             break
         }
 
         if context.freshness == .stale {
-            return inactive("Данные устарели", "Обновляем", .warning)
+            return inactive("status.stale.title", "status.stale.subtitle", .warning, localizer)
         }
         if context.freshness == .lost {
-            return inactive("Нет связи", "Переподключаемся", .unavailable)
+            return inactive("status.disconnected.title", "status.disconnected.subtitle", .unavailable, localizer)
         }
         guard context.powerConfirmedInCurrentSession else {
-            return inactive("Получение данных", "Проверяем питание", .neutral)
+            return inactive("status.loading.title", "status.loading.subtitle", .neutral, localizer)
         }
 
         switch context.power {
         case .online:
             return StatusPresentation(
-                title: "Сеть подключена",
-                subtitle: "Мониторинг активен",
+                title: localizer.text("status.online.title"),
+                subtitle: localizer.text("status.online.subtitle"),
                 tone: .good,
                 inputFlowActive: (context.inputPower ?? 0) > 1,
                 outputFlowActive: (context.outputPower ?? 0) > 1
@@ -97,25 +100,26 @@ public struct StatusPresentation: Equatable, Sendable {
         case .offline:
             let underLoad = (context.outputPower ?? 0) > 1
             return StatusPresentation(
-                title: underLoad ? "Резервное питание" : "Сеть отключена",
-                subtitle: underLoad ? "Работа от батареи" : "Внешнее питание отсутствует",
+                title: localizer.text(underLoad ? "status.backup.title" : "status.offline.title"),
+                subtitle: localizer.text(underLoad ? "status.backup.subtitle" : "status.offline.subtitle"),
                 tone: .warning,
                 inputFlowActive: false,
                 outputFlowActive: underLoad
             )
         case .unknown:
-            return inactive("Получение данных", "Проверяем питание", .neutral)
+            return inactive("status.loading.title", "status.loading.subtitle", .neutral, localizer)
         }
     }
 
     private static func inactive(
-        _ title: String,
-        _ subtitle: String,
-        _ tone: StatusTone
+        _ titleKey: String,
+        _ subtitleKey: String,
+        _ tone: StatusTone,
+        _ localizer: AppLocalizer
     ) -> StatusPresentation {
         StatusPresentation(
-            title: title,
-            subtitle: subtitle,
+            title: localizer.text(titleKey),
+            subtitle: localizer.text(subtitleKey),
             tone: tone,
             inputFlowActive: false,
             outputFlowActive: false

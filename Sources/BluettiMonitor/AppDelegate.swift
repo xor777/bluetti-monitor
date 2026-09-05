@@ -46,8 +46,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         configureStatusItem()
         configurePopover()
         modelObserver = model.objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.updateStatusItem() }
+            DispatchQueue.main.async {
+                self?.updateStatusItem()
+                self?.updatePopoverAppearance()
+            }
         }
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(didChangeSystemLocale),
+            name: NSLocale.currentLocaleDidChangeNotification,
+            object: nil
+        )
 
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -79,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+        NotificationCenter.default.removeObserver(self)
     }
 
     func popoverDidClose(_ notification: Notification) {
@@ -92,6 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     @objc private func didWake() {
         guard sessionStarted else { return }
         session.refreshImmediately()
+    }
+
+    @objc private func didChangeSystemLocale() {
+        model.refreshSystemLanguage()
     }
 
     private func configureStatusItem() {
@@ -113,6 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         )
         hostingController.sizingOptions = [.preferredContentSize]
         popover.contentViewController = hostingController
+        updatePopoverAppearance()
     }
 
     private func showPopover() {
@@ -137,9 +153,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             power: model.power,
             freshness: model.freshness
         ))
-        button.image = MenuBarIconRenderer.image(for: menuBar.icon)
+        let localizer = model.localizer
+        button.image = MenuBarIconRenderer.image(
+            for: menuBar.icon,
+            accessibilityDescription: localizer.text("accessibility.bluettiState")
+        )
         button.title = menuBar.title
-        button.toolTip = "Bluetti Monitor · \(model.presentation.title)"
-        button.setAccessibilityLabel("Bluetti Monitor, \(model.presentation.title)")
+        button.toolTip = localizer.format("menuBar.tooltip", model.presentation.title)
+        button.setAccessibilityLabel(
+            localizer.format("accessibility.menuBarStatus", model.presentation.title)
+        )
+    }
+
+    private func updatePopoverAppearance() {
+        let appearance = model.appearancePreference.appKitAppearance
+        popover.appearance = appearance
+        popover.contentViewController?.view.appearance = appearance
     }
 }

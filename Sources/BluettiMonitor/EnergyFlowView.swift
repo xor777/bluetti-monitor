@@ -8,6 +8,7 @@ struct EnergyFlowView: View {
     let powerConfirmedInCurrentSession: Bool
     let freshness: DataFreshness
     let batteryVisualState: LowBatteryVisualState
+    @Environment(\.appLocalizer) private var localizer
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .center, spacing: 18) {
@@ -17,12 +18,14 @@ struct EnergyFlowView: View {
 
                 HStack(alignment: .top, spacing: 20) {
                     PowerMetric(
-                        title: "ВХОД",
+                        title: localizer.text("energy.input"),
+                        accessibilityLabel: localizer.text("accessibility.inputPower"),
                         value: snapshot.acInputPower,
                         isLive: telemetryIsLive
                     )
                     PowerMetric(
-                        title: "ВЫХОД",
+                        title: localizer.text("energy.output"),
+                        accessibilityLabel: localizer.text("accessibility.outputPower"),
                         value: snapshot.acOutputPower,
                         isLive: telemetryIsLive
                     )
@@ -53,7 +56,7 @@ struct EnergyFlowView: View {
                     .foregroundStyle(voltageColor)
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Состояние сети")
+            .accessibilityLabel(localizer.text("accessibility.gridState"))
             .accessibilityValue("\(powerLabel), \(voltageAccessibilityValue)")
         }
         .accessibilityElement(children: .contain)
@@ -81,7 +84,10 @@ struct EnergyFlowView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(batteryCaption)
-        .accessibilityValue(currentBatteryPercent.map { "\($0) процентов" } ?? "Нет данных")
+        .accessibilityValue(
+            currentBatteryPercent.map { localizer.format("accessibility.percent", Int64($0)) }
+                ?? localizer.text("common.noData")
+        )
     }
 
     private var batteryIsLive: Bool {
@@ -94,8 +100,8 @@ struct EnergyFlowView: View {
     }
 
     private var batteryCaption: String {
-        guard currentBatteryPercent != nil else { return "Нет данных" }
-        return batteryIsLive ? "Заряд" : "Последний заряд"
+        guard currentBatteryPercent != nil else { return localizer.text("common.noData") }
+        return localizer.text(batteryIsLive ? "battery.charge" : "battery.lastCharge")
     }
 
     private var batteryColor: Color {
@@ -107,14 +113,18 @@ struct EnergyFlowView: View {
 
     private var powerLabel: String {
         guard telemetryIsLive else {
-            return snapshot.acInputVoltage == nil ? "Нет данных о сети" : "Последнее состояние сети"
+            return localizer.text(
+                snapshot.acInputVoltage == nil ? "grid.noData" : "grid.lastState"
+            )
         }
         guard powerConfirmedInCurrentSession else {
-            return snapshot.acInputVoltage == nil ? "Нет данных о сети" : "Проверяем сеть"
+            return localizer.text(
+                snapshot.acInputVoltage == nil ? "grid.noData" : "grid.checking"
+            )
         }
         return switch power {
-        case .online: "Сеть подключена"
-        case .offline: "Сеть отключена"
+        case .online: localizer.text("status.online.title")
+        case .offline: localizer.text("status.offline.title")
         case .unknown: presentation.title
         }
     }
@@ -136,8 +146,10 @@ struct EnergyFlowView: View {
     }
 
     private var voltageText: String {
-        guard let voltage = snapshot.acInputVoltage else { return "— В" }
-        return String(format: "%.0f В", voltage)
+        guard let voltage = snapshot.acInputVoltage else {
+            return localizer.format("energy.voltage", "—")
+        }
+        return localizer.format("energy.voltage", String(format: "%.0f", voltage))
     }
 
     private var voltageColor: Color {
@@ -145,16 +157,20 @@ struct EnergyFlowView: View {
     }
 
     private var voltageAccessibilityValue: String {
-        guard let voltage = snapshot.acInputVoltage else { return "напряжение не получено" }
-        let prefix = telemetryIsLive ? "" : "ранее "
-        return "\(prefix)\(Int(voltage.rounded())) вольт"
+        guard let voltage = snapshot.acInputVoltage else {
+            return localizer.text("accessibility.voltageUnavailable")
+        }
+        let value = localizer.format("accessibility.volts", Int64(voltage.rounded()))
+        return telemetryIsLive ? value : localizer.format("accessibility.previousValue", value)
     }
 }
 
 private struct PowerMetric: View {
     let title: String
+    let accessibilityLabel: String
     let value: Int?
     let isLive: Bool
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -169,17 +185,17 @@ private struct PowerMetric: View {
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
-                Text("Вт")
+                Text(localizer.text("energy.watts.short"))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
             }
 
             if value == nil {
-                Text("нет данных")
+                Text(localizer.text("common.noData.lowercase"))
                     .font(.system(size: 9))
                     .foregroundStyle(.secondary)
             } else if !isLive {
-                Text("ранее")
+                Text(localizer.text("common.previously"))
                     .font(.system(size: 9))
                     .foregroundStyle(.secondary)
             }
@@ -187,13 +203,14 @@ private struct PowerMetric: View {
         .foregroundStyle(isLive && value != nil ? Color.primary : Color.secondary)
         .frame(width: 69, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title == "ВХОД" ? "Входная мощность" : "Выходная мощность")
+        .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(accessibilityValue)
     }
 
     private var accessibilityValue: String {
-        guard let value else { return "Нет данных" }
-        return isLive ? "\(value) ватт" : "Последнее значение \(value) ватт"
+        guard let value else { return localizer.text("common.noData") }
+        let watts = localizer.format("accessibility.watts", Int64(value))
+        return isLive ? watts : localizer.format("accessibility.lastValue", watts)
     }
 }
 

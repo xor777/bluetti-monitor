@@ -53,6 +53,9 @@ struct PopoverViewState {
     let loginItemStatus: LoginItemStatus
     let loginItemError: String?
     let launchAtLogin: Bool
+    let languagePreference: LanguagePreference
+    let languageOptions: [LanguageOption]
+    let appearancePreference: AppearancePreference
 }
 
 struct PopoverActions {
@@ -71,6 +74,8 @@ struct PopoverActions {
     var clearNotificationResult: () -> Void
     var setLaunchAtLogin: (Bool) -> Void
     var openLoginItemSettings: () -> Void
+    var setLanguage: (LanguagePreference) -> Void
+    var setAppearance: (AppearancePreference) -> Void
     var copyDiagnostics: () -> Void
     var showAbout: () -> Void
     var quit: () -> Void
@@ -92,6 +97,8 @@ struct PopoverActions {
         clearNotificationResult: {},
         setLaunchAtLogin: { _ in },
         openLoginItemSettings: {},
+        setLanguage: { _ in },
+        setAppearance: { _ in },
         copyDiagnostics: {},
         showAbout: {},
         quit: {}
@@ -101,6 +108,7 @@ struct PopoverActions {
 struct PopoverContentView: View {
     let state: PopoverViewState
     let actions: PopoverActions
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -114,11 +122,11 @@ struct PopoverContentView: View {
                 FirstConnectionView(state: state, actions: actions)
                     .padding(.top, 18)
             case .chooser:
-                NavigationHeader(title: "Сменить устройство", action: actions.cancelDeviceSelection)
+                NavigationHeader(title: localizer.text("device.change.title"), action: actions.cancelDeviceSelection)
                 DeviceChooserView(state: state, actions: actions)
                     .padding(.top, 18)
             case .settings:
-                NavigationHeader(title: "Настройки", action: actions.showMain)
+                NavigationHeader(title: localizer.text("settings.title"), action: actions.showMain)
                 SettingsView(state: state, actions: actions)
                     .padding(.top, 18)
             }
@@ -176,13 +184,16 @@ struct PopoverContentView: View {
 
 private struct SetupServiceMenu: View {
     let actions: PopoverActions
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         Menu {
-            Button("Скопировать диагностику", action: actions.copyDiagnostics)
-            Button("О приложении", action: actions.showAbout)
+            Button(localizer.text("actions.settings"), action: actions.showSettings)
             Divider()
-            Button("Выйти из приложения", action: actions.quit)
+            Button(localizer.text("actions.copyDiagnostics"), action: actions.copyDiagnostics)
+            Button(localizer.text("actions.about"), action: actions.showAbout)
+            Divider()
+            Button(localizer.text("actions.quitApp"), action: actions.quit)
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 15, weight: .semibold))
@@ -191,23 +202,24 @@ private struct SetupServiceMenu: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .accessibilityLabel("Действия")
+        .accessibilityLabel(localizer.text("accessibility.actions"))
     }
 }
 
 private struct ServiceMenu: View {
     let actions: PopoverActions
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         Menu {
-            Button("Настройки…", action: actions.showSettings)
-            Button("Сменить устройство…", action: actions.beginDeviceSelection)
+            Button(localizer.text("actions.settings"), action: actions.showSettings)
+            Button(localizer.text("actions.changeDevice"), action: actions.beginDeviceSelection)
             Divider()
-            Button("Проверить уведомление", action: actions.testNotification)
-            Button("Скопировать диагностику", action: actions.copyDiagnostics)
+            Button(localizer.text("actions.testNotification"), action: actions.testNotification)
+            Button(localizer.text("actions.copyDiagnostics"), action: actions.copyDiagnostics)
             Divider()
-            Button("О приложении", action: actions.showAbout)
-            Button("Выйти из приложения", action: actions.quit)
+            Button(localizer.text("actions.about"), action: actions.showAbout)
+            Button(localizer.text("actions.quitApp"), action: actions.quit)
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 15, weight: .semibold))
@@ -216,13 +228,14 @@ private struct ServiceMenu: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .accessibilityLabel("Действия")
+        .accessibilityLabel(localizer.text("accessibility.actions"))
     }
 }
 
 private struct NavigationHeader: View {
     let title: String
     let action: () -> Void
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         HStack(spacing: 8) {
@@ -232,7 +245,7 @@ private struct NavigationHeader: View {
                     .frame(width: 24, height: 22)
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("Назад")
+            .accessibilityLabel(localizer.text("actions.back"))
 
             Text(title)
                 .font(.system(size: 14, weight: .semibold))
@@ -244,6 +257,7 @@ private struct NavigationHeader: View {
 private struct NormalMonitorView: View {
     let state: PopoverViewState
     let actions: PopoverActions
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         VStack(alignment: .leading, spacing: MonitorStyle.sectionSpacing) {
@@ -273,15 +287,19 @@ private struct NormalMonitorView: View {
     }
 
     private var updateText: String {
-        guard let lastUpdate = state.lastUpdate else { return "Данных пока нет" }
-        guard state.freshness != .fresh else { return "Данные актуальны" }
-        return "Последние данные \(elapsedText(since: lastUpdate, now: state.now)) назад"
+        guard let lastUpdate = state.lastUpdate else { return localizer.text("freshness.noData") }
+        guard state.freshness != .fresh else { return localizer.text("freshness.current") }
+        return localizer.format(
+            "freshness.lastDataAgo",
+            elapsedText(since: lastUpdate, now: state.now, localizer: localizer)
+        )
     }
 }
 
 private struct MonitoringStatusView: View {
     let state: PopoverViewState
     let actions: PopoverActions
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -333,20 +351,29 @@ private struct MonitoringStatusView: View {
         else {
             return state.presentation.title
         }
-        return percent <= 10 ? "Критический заряд" : "Низкий заряд"
+        return localizer.text(percent <= 10 ? "battery.critical" : "battery.low")
     }
 
     private var statusSubtitle: String {
         if state.batteryVisualState == .warning {
-            let elapsed = state.outageStartedAt.map { elapsedText(since: $0, now: state.now) }
-            let outage = elapsed.map { "Сеть отключена · \($0)" } ?? "Сеть отключена"
-            return state.snapshot.batteryPercent.map { $0 <= 10 ? "\(outage) · сохраните работу" : outage }
+            let elapsed = state.outageStartedAt.map {
+                elapsedText(since: $0, now: state.now, localizer: localizer)
+            }
+            let outage = elapsed.map { localizer.format("outage.withDuration", $0) }
+                ?? localizer.text("outage.title")
+            return state.snapshot.batteryPercent.map {
+                $0 <= 10 ? localizer.format("outage.saveWork", outage) : outage
+            }
                 ?? outage
         }
         guard state.power == .offline, let startedAt = state.outageStartedAt else {
             return state.presentation.subtitle
         }
-        return "\(state.presentation.subtitle) · \(elapsedText(since: startedAt, now: state.now))"
+        return localizer.format(
+            "status.withDuration",
+            state.presentation.subtitle,
+            elapsedText(since: startedAt, now: state.now, localizer: localizer)
+        )
     }
 
     private var statusColor: Color {
@@ -362,9 +389,9 @@ private struct MonitoringStatusView: View {
     private func recoveryLabel(_ action: MonitoringRecoveryAction) -> String {
         switch action {
         case .openBluetoothPrivacySettings, .openBluetoothControlSettings:
-            "Открыть настройки Bluetooth"
-        case .reconnect: "Переподключить"
-        case .chooseDevice: "Выбрать устройство"
+            localizer.text("actions.openBluetoothSettings")
+        case .reconnect: localizer.text("actions.reconnect")
+        case .chooseDevice: localizer.text("actions.chooseDevice")
         }
     }
 
@@ -381,6 +408,7 @@ private struct MonitoringStatusView: View {
 private struct NotificationReadinessView: View {
     let state: PopoverViewState
     let actions: PopoverActions
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         if state.screen == .normal,
@@ -404,7 +432,7 @@ private struct NotificationReadinessView: View {
             .buttonStyle(.plain)
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
-            .accessibilityLabel("\(healthyFooterText). Открыть настройки")
+            .accessibilityLabel(localizer.format("accessibility.openSettingsFor", healthyFooterText))
         } else {
             fullReadiness
         }
@@ -413,13 +441,16 @@ private struct NotificationReadinessView: View {
     private var healthyFooterText: String {
         let freshness: String
         if state.freshness == .fresh {
-            freshness = "Данные актуальны"
+            freshness = localizer.text("freshness.current")
         } else if let lastUpdate = state.lastUpdate {
-            freshness = "Последние данные \(elapsedText(since: lastUpdate, now: state.now)) назад"
+            freshness = localizer.format(
+                "freshness.lastDataAgo",
+                elapsedText(since: lastUpdate, now: state.now, localizer: localizer)
+            )
         } else {
-            freshness = "Данных пока нет"
+            freshness = localizer.text("freshness.noData")
         }
-        return "\(freshness) · уведомления включены"
+        return localizer.format("notifications.enabledSummary", freshness)
     }
 
     private var fullReadiness: some View {
@@ -457,25 +488,25 @@ private struct NotificationReadinessView: View {
     private var notificationButton: some View {
         switch state.notificationReadiness.action {
         case .requestAuthorization:
-            Button("Разрешить") {
+            Button(localizer.text("actions.allow")) {
                 actions.performNotificationAction(.requestAuthorization)
             }
             .buttonStyle(.link)
             .font(.system(size: 12, weight: .medium))
         case .openSystemSettings:
-            Button("Настройки") {
+            Button(localizer.text("settings.title")) {
                 actions.performNotificationAction(.openSystemSettings)
             }
             .buttonStyle(.link)
             .font(.system(size: 12, weight: .medium))
         case .refresh:
-            Button("Проверить") {
+            Button(localizer.text("actions.check")) {
                 actions.performNotificationAction(.refresh)
             }
             .buttonStyle(.link)
             .font(.system(size: 12, weight: .medium))
         case .none:
-            Button("Проверить", action: actions.testNotification)
+            Button(localizer.text("actions.check"), action: actions.testNotification)
                 .buttonStyle(.link)
                 .font(.system(size: 12))
         }
@@ -493,6 +524,7 @@ private struct NotificationReadinessView: View {
 private struct NotificationResultView: View {
     let result: NotificationActionResult
     let clear: () -> Void
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         HStack(alignment: .top, spacing: 7) {
@@ -509,27 +541,30 @@ private struct NotificationResultView: View {
                     .font(.system(size: 9, weight: .bold))
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("Скрыть сообщение")
+            .accessibilityLabel(localizer.text("accessibility.dismissMessage"))
         }
     }
 
     private var message: String {
         switch result {
-        case let .success(message), let .failure(message): message
+        case let .success(confirmation): confirmation.localized(using: localizer)
+        case let .failure(error): error.localized(using: localizer)
+        case let .unavailable(health):
+            NotificationReadinessPresentation.make(health, localizer: localizer).detail
         }
     }
 
     private var symbol: String {
         switch result {
         case .success: "checkmark.circle.fill"
-        case .failure: "exclamationmark.triangle.fill"
+        case .failure, .unavailable: "exclamationmark.triangle.fill"
         }
     }
 
     private var color: Color {
         switch result {
         case .success: MonitorStyle.accent
-        case .failure: .orange
+        case .failure, .unavailable: .orange
         }
     }
 }
@@ -538,13 +573,14 @@ private struct FirstConnectionView: View {
     let state: PopoverViewState
     let actions: PopoverActions
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         VStack(alignment: .leading, spacing: MonitorStyle.sectionSpacing) {
             VStack(alignment: .leading, spacing: 5) {
-                Text("Подключим станцию")
+                Text(localizer.text("setup.title"))
                     .font(.system(size: 23, weight: .semibold))
-                Text("Найдём Premium 100 V2 рядом с Mac по Bluetooth. Настройки станции не меняются.")
+                Text(localizer.text("setup.detail"))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -560,59 +596,59 @@ private struct FirstConnectionView: View {
         switch state.firstConnectionPhase {
         case .welcome:
             primaryButton(
-                "Найти станцию",
+                localizer.text("setup.findStation"),
                 systemImage: "antenna.radiowaves.left.and.right",
                 action: actions.startMonitoring
             )
         case .readyToConnect:
             selectedStationCard
             primaryButton(
-                "Подключить станцию",
+                localizer.text("setup.connectStation"),
                 systemImage: "link",
                 action: actions.startMonitoring
             )
             changeStationButton
         case .startingBluetooth:
             progressCard(
-                title: "Запускаем Bluetooth…",
-                detail: "Если macOS спросит разрешение, подтвердите доступ для Bluetti Monitor."
+                title: localizer.text("setup.startingBluetooth.title"),
+                detail: localizer.text("setup.startingBluetooth.detail")
             )
         case let .searching(candidateCount):
             progressCard(
-                title: "Ищем станции поблизости…",
+                title: localizer.text("setup.searching.title"),
                 detail: candidateCount == 0
-                    ? "Поиск займёт несколько секунд."
-                    : "Найдено: \(candidateCount). Завершаем поиск…"
+                    ? localizer.text("setup.searching.detail")
+                    : localizer.format("setup.searching.found", candidateCount)
             )
         case .choosing:
-            Text("Выберите станцию по подписи Bluetooth:")
+            Text(localizer.text("setup.chooseInstruction"))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
             StationChoicesView(choices: state.stationCandidates, select: actions.selectDevice)
-            Button("Искать снова", action: actions.rescanDevices)
+            Button(localizer.text("actions.searchAgain"), action: actions.rescanDevices)
                 .buttonStyle(.link)
                 .font(.system(size: 12))
         case .empty:
             EmptyDiscoveryView(showPhoneHint: true)
             primaryButton(
-                "Искать снова",
+                localizer.text("actions.searchAgain"),
                 systemImage: "arrow.clockwise",
                 action: actions.rescanDevices
             )
         case .rescanning:
             progressCard(
-                title: "Ищем станции снова…",
-                detail: "Обновляем список устройств поблизости."
+                title: localizer.text("setup.rescanning.title"),
+                detail: localizer.text("setup.rescanning.detail")
             )
         case .bluetoothUnauthorized:
             statusCard(
                 symbol: "hand.raised.fill",
                 color: .orange,
-                title: "Нет доступа к Bluetooth",
-                detail: "Разрешите Bluetooth для Bluetti Monitor в настройках macOS."
+                title: localizer.text("setup.bluetoothUnauthorized.title"),
+                detail: localizer.text("setup.bluetoothUnauthorized.detail")
             )
             primaryButton(
-                "Открыть настройки Bluetooth",
+                localizer.text("actions.openBluetoothSettings"),
                 systemImage: "gear",
                 action: actions.openBluetoothPrivacySettings
             )
@@ -620,11 +656,11 @@ private struct FirstConnectionView: View {
             statusCard(
                 symbol: "antenna.radiowaves.left.and.right.slash",
                 color: .orange,
-                title: "Bluetooth выключен",
-                detail: "Включите Bluetooth, чтобы найти станцию."
+                title: localizer.text("setup.bluetoothOff.title"),
+                detail: localizer.text("setup.bluetoothOff.detail")
             )
             primaryButton(
-                "Открыть настройки Bluetooth",
+                localizer.text("actions.openBluetoothSettings"),
                 systemImage: "gear",
                 action: actions.openBluetoothControlSettings
             )
@@ -632,17 +668,17 @@ private struct FirstConnectionView: View {
             statusCard(
                 symbol: "exclamationmark.triangle.fill",
                 color: .orange,
-                title: "Bluetooth недоступен",
-                detail: "Этот Mac не сообщает доступный Bluetooth-адаптер."
+                title: localizer.text("setup.bluetoothUnsupported.title"),
+                detail: localizer.text("setup.bluetoothUnsupported.detail")
             )
         case .bluetoothResetting:
             progressCard(
-                title: "Bluetooth перезапускается…",
-                detail: "Подождите немного — поиск продолжится автоматически."
+                title: localizer.text("setup.bluetoothResetting.title"),
+                detail: localizer.text("setup.bluetoothResetting.detail")
             )
         case .findingSelectedStation:
             progressCard(
-                title: "Ищем выбранную станцию…",
+                title: localizer.text("setup.findingSelected.title"),
                 detail: selectedStationDetail
             )
             changeStationButton
@@ -650,37 +686,37 @@ private struct FirstConnectionView: View {
             statusCard(
                 symbol: "externaldrive.badge.questionmark",
                 color: .orange,
-                title: "Выбранная станция не найдена",
-                detail: "Убедитесь, что станция включена и находится рядом."
+                title: localizer.text("setup.selectedNotFound.title"),
+                detail: localizer.text("setup.selectedNotFound.detail")
             )
             recoveryButtons
         case .connecting:
             progressCard(
-                title: "Подключаемся к станции…",
+                title: localizer.text("setup.connecting.title"),
                 detail: selectedStationDetail
             )
             changeStationButton
         case .waitingForTelemetry:
             progressCard(
-                title: "Соединение установлено",
-                detail: "Проверяем текущее питание станции…"
+                title: localizer.text("setup.connected.title"),
+                detail: localizer.text("setup.connected.detail")
             )
             changeStationButton
         case .connectionFailed:
             statusCard(
                 symbol: "exclamationmark.triangle.fill",
                 color: .orange,
-                title: "Не удалось подключиться",
+                title: localizer.text("setup.connectionFailed.title"),
                 detail: state.monitoringDetail
-                    ?? "Проверьте, что станция включена, находится рядом и свободна для Bluetooth-соединения."
+                    ?? localizer.text("setup.connectionFailed.detail")
             )
             recoveryButtons
         case .ready:
             statusCard(
                 symbol: "checkmark.circle.fill",
                 color: MonitorStyle.accent,
-                title: "Мониторинг запущен",
-                detail: "Получены актуальные данные о питании."
+                title: localizer.text("setup.ready.title"),
+                detail: localizer.text("setup.ready.detail")
             )
         }
     }
@@ -694,7 +730,7 @@ private struct FirstConnectionView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Premium 100 V2")
                     .font(.system(size: 13, weight: .medium))
-                Text(state.deviceIdentity ?? "Станция выбрана")
+                Text(state.deviceIdentity ?? localizer.text("setup.stationSelected"))
                     .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(.secondary)
             }
@@ -706,7 +742,7 @@ private struct FirstConnectionView: View {
     }
 
     private var changeStationButton: some View {
-        Button("Выбрать другую станцию", action: actions.beginDeviceSelection)
+        Button(localizer.text("actions.chooseAnotherStation"), action: actions.beginDeviceSelection)
             .buttonStyle(.link)
             .font(.system(size: 12))
     }
@@ -714,7 +750,7 @@ private struct FirstConnectionView: View {
     private var recoveryButtons: some View {
         HStack(spacing: 9) {
             Button(action: actions.reconnect) {
-                Text("Повторить")
+                Text(localizer.text("actions.retry"))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(primaryActionForeground)
                     .padding(.horizontal, 14)
@@ -725,7 +761,7 @@ private struct FirstConnectionView: View {
                     )
             }
             .buttonStyle(.plain)
-            Button("Выбрать другую", action: actions.beginDeviceSelection)
+            Button(localizer.text("actions.chooseAnother"), action: actions.beginDeviceSelection)
                 .buttonStyle(.bordered)
         }
     }
@@ -806,6 +842,7 @@ private struct FirstConnectionView: View {
 private struct DeviceChooserView: View {
     let state: PopoverViewState
     let actions: PopoverActions
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         VStack(alignment: .leading, spacing: MonitorStyle.sectionSpacing) {
@@ -816,20 +853,20 @@ private struct DeviceChooserView: View {
                     Text(state.presentation.subtitle)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
-                    Button("Открыть настройки Bluetooth", action: openBluetoothRecovery)
+                    Button(localizer.text("actions.openBluetoothSettings"), action: openBluetoothRecovery)
                         .buttonStyle(.link)
                 }
             } else if state.isDeviceRescanInProgress {
                 HStack(spacing: 9) {
                     ProgressView().controlSize(.small)
-                    Text("Ищем станции снова…")
+                    Text(localizer.text("setup.rescanning.title"))
                         .font(.system(size: 13))
                 }
             } else if state.stationCandidates.isEmpty {
                 if state.selectionMode == .initialDiscovery {
                     HStack(spacing: 9) {
                         ProgressView().controlSize(.small)
-                        Text("Ищем станции поблизости…")
+                        Text(localizer.text("setup.searching.title"))
                             .font(.system(size: 13))
                     }
                 } else {
@@ -844,13 +881,13 @@ private struct DeviceChooserView: View {
             }
 
             HStack {
-                Button("Искать снова", action: actions.rescanDevices)
+                Button(localizer.text("actions.searchAgain"), action: actions.rescanDevices)
                     .disabled(state.bluetooth != .poweredOn || state.isDeviceRescanInProgress)
                 Spacer()
                 if state.canCancelDeviceSelection {
-                    Button("Отмена", action: actions.cancelDeviceSelection)
+                    Button(localizer.text("actions.cancel"), action: actions.cancelDeviceSelection)
                 } else {
-                    Button("Назад", action: actions.cancelDeviceSelection)
+                    Button(localizer.text("actions.back"), action: actions.cancelDeviceSelection)
                 }
             }
         }
@@ -859,9 +896,9 @@ private struct DeviceChooserView: View {
 
     private var chooserInstruction: String {
         if state.selectedID != nil, state.connection == .connected {
-            return "Выберите станцию по подписи Bluetooth. Текущая продолжает работать, пока вы не выберете другую."
+            return localizer.text("chooser.instruction.currentContinues")
         }
-        return "Выберите станцию по подписи Bluetooth."
+        return localizer.text("chooser.instruction")
     }
 
     private func openBluetoothRecovery() {
@@ -879,6 +916,7 @@ private struct DeviceChooserView: View {
 private struct StationChoicesView: View {
     let choices: [PopoverStationChoice]
     let select: (UUID) -> Void
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         VStack(spacing: 0) {
@@ -902,7 +940,7 @@ private struct StationChoicesView: View {
                         }
                         Spacer()
                         if choice.isCurrent {
-                            Text("Текущее")
+                            Text(localizer.text("chooser.current"))
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(MonitorStyle.accent)
                         }
@@ -927,18 +965,19 @@ private struct StationChoicesView: View {
 
 private struct EmptyDiscoveryView: View {
     let showPhoneHint: Bool
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Станции не найдены")
+            Text(localizer.text("chooser.empty.title"))
                 .font(.system(size: 17, weight: .semibold))
-            Text("Убедитесь, что Premium 100 V2 включена и находится рядом.")
+            Text(localizer.text("chooser.empty.detail"))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if showPhoneHint {
                 Label(
-                    "Закройте приложение BLUETTI на телефоне: станция может поддерживать только одно Bluetooth-соединение.",
+                    localizer.text("chooser.empty.phoneHint"),
                     systemImage: "iphone.slash"
                 )
                 .font(.system(size: 11))
@@ -953,30 +992,74 @@ private struct EmptyDiscoveryView: View {
 private struct SettingsView: View {
     let state: PopoverViewState
     let actions: PopoverActions
+    @Environment(\.appLocalizer) private var localizer
 
     var body: some View {
         VStack(alignment: .leading, spacing: MonitorStyle.sectionSpacing) {
+            VStack(spacing: 10) {
+                preferenceRow(title: localizer.text("settings.language.label")) {
+                    Picker(
+                        localizer.text("settings.language.label"),
+                        selection: Binding(
+                            get: { state.languagePreference },
+                            set: { actions.setLanguage($0) }
+                        )
+                    ) {
+                        Text(localizer.text("settings.language.system"))
+                            .tag(LanguagePreference.system)
+                        ForEach(state.languageOptions) { option in
+                            Text(option.nativeName)
+                                .tag(LanguagePreference.language(option.identifier))
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                }
+
+                Divider()
+
+                preferenceRow(title: localizer.text("settings.appearance.label")) {
+                    Picker(
+                        localizer.text("settings.appearance.label"),
+                        selection: Binding(
+                            get: { state.appearancePreference },
+                            set: { actions.setAppearance($0) }
+                        )
+                    ) {
+                        ForEach(AppearancePreference.allCases, id: \.self) { appearance in
+                            Text(appearanceName(appearance)).tag(appearance)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                }
+            }
+            .padding(11)
+            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: MonitorStyle.sectionRadius))
+
             LoginItemRow(state: state, actions: actions)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Уведомления")
+                Text(localizer.text("settings.notifications"))
                     .font(.system(size: 13, weight: .semibold))
                 NotificationReadinessView(state: state, actions: actions)
             }
 
             VStack(alignment: .leading, spacing: 7) {
-                Text("Устройство")
+                Text(localizer.text("settings.device"))
                     .font(.system(size: 13, weight: .semibold))
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(state.deviceName)
                             .font(.system(size: 13, weight: .medium))
-                        Text(state.deviceIdentity ?? "Не выбрано")
+                        Text(state.deviceIdentity ?? localizer.text("settings.device.notSelected"))
                             .font(.system(size: 11, design: .rounded))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Сменить…", action: actions.beginDeviceSelection)
+                    Button(localizer.text("settings.device.change"), action: actions.beginDeviceSelection)
                 }
             }
             .padding(11)
@@ -984,29 +1067,50 @@ private struct SettingsView: View {
 
             Divider()
             HStack(spacing: 14) {
-                Button("Скопировать диагностику", action: actions.copyDiagnostics)
-                Button("О приложении", action: actions.showAbout)
+                Button(localizer.text("actions.copyDiagnostics"), action: actions.copyDiagnostics)
+                Button(localizer.text("actions.about"), action: actions.showAbout)
                 Spacer()
-                Button("Выйти", action: actions.quit)
+                Button(localizer.text("actions.quit"), action: actions.quit)
             }
             .buttonStyle(.link)
             .font(.system(size: 12))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    private func preferenceRow<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+            Spacer()
+            content()
+        }
+    }
+
+    private func appearanceName(_ appearance: AppearancePreference) -> String {
+        switch appearance {
+        case .system: localizer.text("settings.appearance.system")
+        case .light: localizer.text("settings.appearance.light")
+        case .dark: localizer.text("settings.appearance.dark")
+        }
+    }
 }
 
 private struct LoginItemRow: View {
     let state: PopoverViewState
     let actions: PopoverActions
+    @Environment(\.appLocalizer) private var localizer
 
     @ViewBuilder
     var body: some View {
         if state.loginItemStatus == .unavailable {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Запуск при входе в macOS")
+                Text(localizer.text("login.title"))
                     .font(.system(size: 13, weight: .medium))
-                Text("Автозапуск сейчас недоступен. При ручном запуске мониторинг работает как обычно.")
+                Text(localizer.text("login.unavailable.detail"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1021,7 +1125,7 @@ private struct LoginItemRow: View {
                     )
                 ) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Запускать при входе в macOS")
+                        Text(localizer.text("login.toggle"))
                             .font(.system(size: 13, weight: .medium))
                         Text(loginDetail)
                             .font(.system(size: 11))
@@ -1043,7 +1147,7 @@ private struct LoginItemRow: View {
                 }
 
                 if state.loginItemStatus == .requiresApproval {
-                    Button("Открыть настройки объектов входа", action: actions.openLoginItemSettings)
+                    Button(localizer.text("login.openSettings"), action: actions.openLoginItemSettings)
                         .buttonStyle(.link)
                         .font(.system(size: 11))
                 }
@@ -1054,11 +1158,11 @@ private struct LoginItemRow: View {
 
     private var loginDetail: String {
         switch state.loginItemStatus {
-        case .unknown: "Статус пока не проверен"
-        case .disabled: "Приложение запускается вручную"
-        case .enabled: "Автозапуск включён"
-        case .requiresApproval: "Ожидает подтверждения в настройках macOS"
-        case .unavailable: "Автозапуск недоступен для этой копии приложения"
+        case .unknown: localizer.text("login.status.unknown")
+        case .disabled: localizer.text("login.status.disabled")
+        case .enabled: localizer.text("login.status.enabled")
+        case .requiresApproval: localizer.text("login.status.requiresApproval")
+        case .unavailable: localizer.text("login.status.unavailable")
         }
     }
 
@@ -1078,14 +1182,16 @@ private extension View {
     }
 }
 
-private func elapsedText(since date: Date, now: Date) -> String {
+private func elapsedText(since date: Date, now: Date, localizer: AppLocalizer) -> String {
     let seconds = max(0, Int(now.timeIntervalSince(date)))
-    if seconds < 60 { return "меньше минуты" }
+    if seconds < 60 { return localizer.text("duration.lessThanMinute") }
     let minutes = seconds / 60
-    if minutes < 60 { return "\(minutes) мин." }
+    if minutes < 60 { return localizer.minutes(minutes) }
     let hours = minutes / 60
     let remainder = minutes % 60
-    return remainder == 0 ? "\(hours) ч" : "\(hours) ч \(remainder) мин."
+    return remainder == 0
+        ? localizer.hours(hours)
+        : "\(localizer.hours(hours)) \(localizer.minutes(remainder))"
 }
 
 private func shortIdentity(_ id: UUID) -> String {

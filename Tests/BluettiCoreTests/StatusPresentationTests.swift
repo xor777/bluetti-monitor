@@ -4,15 +4,15 @@ import Foundation
 func statusPresentationTests() -> [TestCase] {
     [
         ("powered off Bluetooth has a specific title", {
-            let status = StatusPresentation.make(.init(bluetooth: .poweredOff))
+            let status = russianStatus(.init(bluetooth: .poweredOff))
             try expectEqual(status.title, "Bluetooth выключен")
         }),
         ("unauthorized Bluetooth has a specific title", {
-            let status = StatusPresentation.make(.init(bluetooth: .unauthorized))
+            let status = russianStatus(.init(bluetooth: .unauthorized))
             try expectEqual(status.title, "Нет доступа к Bluetooth")
         }),
         ("scanning becomes not found after ten seconds", {
-            let status = StatusPresentation.make(.init(
+            let status = russianStatus(.init(
                 bluetooth: .poweredOn,
                 connection: .scanning,
                 scanningFor: 10
@@ -20,7 +20,7 @@ func statusPresentationTests() -> [TestCase] {
             try expectEqual(status.title, "Устройство не найдено")
         }),
         ("online state does not overclaim beyond grid connection", {
-            let status = StatusPresentation.make(.init(
+            let status = russianStatus(.init(
                 bluetooth: .poweredOn,
                 connection: .connected,
                 power: .online,
@@ -32,7 +32,7 @@ func statusPresentationTests() -> [TestCase] {
             try expectEqual(status.subtitle, "Мониторинг активен")
         }),
         ("fresh telemetry waits for current-session power confirmation", {
-            let status = StatusPresentation.make(.init(
+            let status = russianStatus(.init(
                 bluetooth: .poweredOn,
                 connection: .connected,
                 power: .offline,
@@ -45,7 +45,7 @@ func statusPresentationTests() -> [TestCase] {
             try expectEqual(status.outputFlowActive, false)
         }),
         ("offline under load is backup power", {
-            let status = StatusPresentation.make(.init(
+            let status = russianStatus(.init(
                 bluetooth: .poweredOn,
                 connection: .connected,
                 power: .offline,
@@ -58,7 +58,7 @@ func statusPresentationTests() -> [TestCase] {
             try expectEqual(status.outputFlowActive, true)
         }),
         ("offline without load is disconnected grid", {
-            let status = StatusPresentation.make(.init(
+            let status = russianStatus(.init(
                 bluetooth: .poweredOn,
                 connection: .connected,
                 power: .offline,
@@ -70,7 +70,7 @@ func statusPresentationTests() -> [TestCase] {
             try expectEqual(status.outputFlowActive, false)
         }),
         ("stale telemetry overrides prior power state", {
-            let status = StatusPresentation.make(.init(
+            let status = russianStatus(.init(
                 bluetooth: .poweredOn,
                 connection: .connected,
                 power: .online,
@@ -82,7 +82,7 @@ func statusPresentationTests() -> [TestCase] {
             try expectEqual(status.outputFlowActive, false)
         }),
         ("disconnected telemetry cannot animate", {
-            let status = StatusPresentation.make(.init(
+            let status = russianStatus(.init(
                 bluetooth: .poweredOn,
                 connection: .disconnected,
                 power: .online,
@@ -95,4 +95,11 @@ func statusPresentationTests() -> [TestCase] {
             try expectEqual(status.outputFlowActive, false)
         }),
     ]
+}
+
+private func russianStatus(_ context: StatusContext) -> StatusPresentation {
+    StatusPresentation.make(
+        context,
+        localizer: AppLocalizer(language: .language("ru"))
+    )
 }

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>
-    <string>ru</string>
+    <string>en</string>
     <key>CFBundleDisplayName</key>
     <string>Bluetti Monitor</string>
     <key>CFBundleExecutable</key>
@@ -27,7 +27,7 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Приложению нужен Bluetooth для локального чтения состояния BLUETTI.</string>
+    <string>Bluetti Monitor needs Bluetooth to read the local status of your BLUETTI station.</string>
     <key>NSHumanReadableCopyright</key>
     <string>© 2026</string>
 </dict>
