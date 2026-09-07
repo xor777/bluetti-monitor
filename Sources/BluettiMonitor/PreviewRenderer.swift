@@ -368,6 +368,32 @@ private struct PreviewFixture {
                 )
             ),
             PreviewFixture(
+                name: "zero-battery",
+                state: make(
+                    power: .offline,
+                    snapshot: DeviceSnapshot(
+                        model: "PR100V2",
+                        batteryPercent: 0,
+                        acInputVoltage: 0,
+                        acInputPower: 0,
+                        acOutputPower: 0
+                    )
+                )
+            ),
+            PreviewFixture(
+                name: "unknown-battery",
+                state: make(
+                    snapshot: DeviceSnapshot(
+                        model: "PR100V2",
+                        batteryPercent: nil,
+                        acInputVoltage: 230,
+                        acInputPower: 186,
+                        acOutputPower: 132
+                    ),
+                    batteryState: .unavailable
+                )
+            ),
+            PreviewFixture(
                 name: "critical-backup",
                 state: make(
                     power: .offline,

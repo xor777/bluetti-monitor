@@ -32,12 +32,12 @@ struct EnergyFlowView: View {
                 }
             }
 
-            ChargeScale(
+            ChargeBattery(
                 percent: currentBatteryPercent,
                 color: batteryColor,
                 isLive: batteryIsLive
             )
-            .frame(height: 34)
+            .frame(height: 22)
 
             HStack(spacing: 7) {
                 Image(systemName: powerSymbol)
@@ -83,7 +83,7 @@ struct EnergyFlowView: View {
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(batteryCaption)
+        .accessibilityLabel(batteryAccessibilityLabel)
         .accessibilityValue(
             currentBatteryPercent.map { localizer.format("accessibility.percent", Int64($0)) }
                 ?? localizer.text("common.noData")
@@ -102,6 +102,13 @@ struct EnergyFlowView: View {
     private var batteryCaption: String {
         guard currentBatteryPercent != nil else { return localizer.text("common.noData") }
         return localizer.text(batteryIsLive ? "battery.charge" : "battery.lastCharge")
+    }
+
+    private var batteryAccessibilityLabel: String {
+        guard batteryIsLive, let percent = currentBatteryPercent else { return batteryCaption }
+        if percent <= 10 { return localizer.text("battery.critical") }
+        if percent <= 20 { return localizer.text("battery.low") }
+        return batteryCaption
     }
 
     private var batteryColor: Color {
@@ -214,69 +221,46 @@ private struct PowerMetric: View {
     }
 }
 
-private struct ChargeScale: View {
+private struct ChargeBattery: View {
     let percent: Int?
     let color: Color
     let isLive: Bool
 
     var body: some View {
         GeometryReader { proxy in
-            let value = CGFloat(percent ?? 0) / 100
-            let markerX = proxy.size.width * value
+            let terminalWidth: CGFloat = 5
+            let terminalGap: CGFloat = 2
+            let bodyWidth = max(0, proxy.size.width - terminalWidth - terminalGap)
+            let bodyHeight: CGFloat = 18
+            let inset: CGFloat = 3
+            let fillFraction = CGFloat(percent ?? 0) / 100
+            let fillWidth = max(0, bodyWidth - (inset * 2)) * fillFraction
 
-            ZStack(alignment: .topLeading) {
-                Canvas { context, size in
-                    let baselineY: CGFloat = 19
-                    var baseline = Path()
-                    baseline.move(to: CGPoint(x: 0, y: baselineY))
-                    baseline.addLine(to: CGPoint(x: size.width, y: baselineY))
-                    context.stroke(
-                        baseline,
-                        with: .color(Color.primary.opacity(0.13)),
-                        lineWidth: 1
-                    )
+            HStack(spacing: terminalGap) {
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.primary.opacity(0.055))
 
-                    for index in 0...20 {
-                        let x = size.width * CGFloat(index) / 20
-                        let isMajor = index % 5 == 0
-                        let tickHeight: CGFloat = isMajor ? 12 : (index % 2 == 0 ? 8 : 5)
-                        var tick = Path()
-                        tick.move(to: CGPoint(x: x, y: baselineY - tickHeight))
-                        tick.addLine(to: CGPoint(x: x, y: baselineY))
-                        let tickIsActive = percent != nil && CGFloat(index * 5) <= CGFloat(percent!)
-                        context.stroke(
-                            tick,
-                            with: .color(tickIsActive ? color.opacity(isLive ? 0.9 : 0.58) : Color.primary.opacity(0.18)),
-                            style: StrokeStyle(lineWidth: isMajor ? 1.5 : 1, lineCap: .round)
-                        )
+                    if percent != nil, fillWidth > 0 {
+                        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                            .fill(color.opacity(isLive ? 0.92 : 0.52))
+                            .frame(width: fillWidth, height: bodyHeight - (inset * 2))
+                            .padding(.leading, inset)
                     }
 
-                    if percent != nil {
-                        var marker = Path()
-                        marker.move(to: CGPoint(x: markerX, y: 1))
-                        marker.addLine(to: CGPoint(x: max(0, markerX - 3.5), y: 6))
-                        marker.addLine(to: CGPoint(x: min(size.width, markerX + 3.5), y: 6))
-                        marker.closeSubpath()
-                        context.fill(marker, with: .color(color.opacity(isLive ? 1 : 0.65)))
-                    }
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(Color.primary.opacity(isLive ? 0.28 : 0.18), lineWidth: 1)
                 }
+                .frame(width: bodyWidth, height: bodyHeight)
 
-                HStack {
-                    Text("0")
-                    Spacer()
-                    Text("25")
-                    Spacer()
-                    Text("50")
-                    Spacer()
-                    Text("75")
-                    Spacer()
-                    Text("100")
-                }
-                .font(.system(size: 8, weight: .medium, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.tertiary)
-                .offset(y: 23)
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(Color.primary.opacity(isLive ? 0.28 : 0.18))
+                    .frame(width: terminalWidth, height: 8)
             }
+            .frame(maxHeight: .infinity, alignment: .center)
+        }
+        .transaction { transaction in
+            transaction.animation = nil
         }
         .accessibilityHidden(true)
     }
