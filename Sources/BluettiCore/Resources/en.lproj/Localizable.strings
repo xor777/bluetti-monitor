@@ -111,14 +111,14 @@
 "chooser.empty.phoneHint" = "Close the BLUETTI phone app. The station may support only one Bluetooth connection.";
 
 "login.title" = "Open at Login";
-"login.unavailable.detail" = "Open at Login is unavailable right now. Monitoring works normally when you open the app manually.";
+"login.unavailable.detail" = "macOS couldn’t find this app’s login service. You can still open the app manually.";
 "login.toggle" = "Open at Login";
 "login.openSettings" = "Open Login Items Settings";
 "login.status.unknown" = "Status not checked yet";
 "login.status.disabled" = "The app opens manually";
 "login.status.enabled" = "Open at Login is on";
 "login.status.requiresApproval" = "Waiting for approval in macOS Settings";
-"login.status.unavailable" = "Open at Login is unavailable for this copy of the app";
+"login.status.unavailable" = "macOS could not find this app’s login service";
 
 "status.bluetooth.off.title" = "Bluetooth is off";
 "status.bluetooth.off.subtitle" = "Monitoring paused";

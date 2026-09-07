@@ -213,7 +213,6 @@ private struct ServiceMenu: View {
     var body: some View {
         Menu {
             Button(localizer.text("actions.settings"), action: actions.showSettings)
-            Button(localizer.text("actions.changeDevice"), action: actions.beginDeviceSelection)
             Divider()
             Button(localizer.text("actions.testNotification"), action: actions.testNotification)
             Button(localizer.text("actions.copyDiagnostics"), action: actions.copyDiagnostics)

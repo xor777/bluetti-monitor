@@ -111,14 +111,14 @@
 "chooser.empty.phoneHint" = "Закройте приложение BLUETTI на телефоне: станция может поддерживать только одно Bluetooth-соединение.";
 
 "login.title" = "Запуск при входе в macOS";
-"login.unavailable.detail" = "Автозапуск сейчас недоступен. При ручном запуске мониторинг работает как обычно.";
+"login.unavailable.detail" = "macOS не нашла службу автозапуска этого приложения. Его можно запускать вручную.";
 "login.toggle" = "Запускать при входе в macOS";
 "login.openSettings" = "Открыть настройки объектов входа";
 "login.status.unknown" = "Статус пока не проверен";
 "login.status.disabled" = "Приложение запускается вручную";
 "login.status.enabled" = "Автозапуск включён";
 "login.status.requiresApproval" = "Ожидает подтверждения в настройках macOS";
-"login.status.unavailable" = "Автозапуск недоступен для этой копии приложения";
+"login.status.unavailable" = "macOS не нашла службу автозапуска этой копии приложения";
 
 "status.bluetooth.off.title" = "Bluetooth выключен";
 "status.bluetooth.off.subtitle" = "Мониторинг остановлен";
