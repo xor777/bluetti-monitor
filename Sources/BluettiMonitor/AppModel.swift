@@ -212,7 +212,15 @@ final class AppModel: ObservableObject {
 
     func setFreshness(_ value: DataFreshness) {
         freshness = value
+        if value != .fresh {
+            snapshot.clearRemainingTime()
+        }
         completeFirstRunIfReady()
+    }
+
+    func clearRemainingTime() {
+        guard snapshot.remainingTimeMinutes != nil || snapshot.remainingTimeIsCapped else { return }
+        snapshot.clearRemainingTime()
     }
 
     func beginMonitoringSession() {
@@ -238,6 +246,7 @@ final class AppModel: ObservableObject {
     func monitoringLost(error: UserFacingError?) {
         connection = .disconnected
         freshness = .lost
+        snapshot.clearRemainingTime()
         powerConfirmedInCurrentSession = false
         batteryObservedInCurrentSession = false
         lastBatteryUpdate = nil
@@ -250,6 +259,9 @@ final class AppModel: ObservableObject {
     func confirmPowerState(_ state: ExternalPowerState, at date: Date = Date()) {
         power = state
         powerConfirmedInCurrentSession = true
+        if state != .offline {
+            snapshot.clearRemainingTime()
+        }
         if state == .online {
             outageTracker.handle(.changed(from: .offline, to: .online), at: date.timeIntervalSinceReferenceDate)
             outageStartedAt = outageTracker.startedAt.map(Date.init(timeIntervalSinceReferenceDate:))
@@ -259,6 +271,7 @@ final class AppModel: ObservableObject {
     }
 
     func handle(_ transition: PowerTransition, at date: Date = Date()) {
+        snapshot.clearRemainingTime()
         switch transition {
         case let .initial(state):
             power = state

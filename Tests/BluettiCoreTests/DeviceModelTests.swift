@@ -20,7 +20,10 @@ func deviceModelTests() -> [TestCase] {
                 batteryPercent: 18,
                 acInputVoltage: 230,
                 acInputPower: 120,
-                acOutputPower: 96
+                acOutputPower: 96,
+                dcInputPower: 30,
+                dcOutputPower: 7,
+                remainingTimeMinutes: 666
             )
 
             snapshot.clearTelemetryForNewSession()
@@ -30,6 +33,21 @@ func deviceModelTests() -> [TestCase] {
             try expectNil(snapshot.acInputVoltage)
             try expectNil(snapshot.acInputPower)
             try expectNil(snapshot.acOutputPower)
+            try expectNil(snapshot.dcInputPower)
+            try expectNil(snapshot.dcOutputPower)
+            try expectNil(snapshot.remainingTimeMinutes)
+        }),
+        ("remaining time updates set cap metadata and unavailable clears it", {
+            var snapshot = DeviceSnapshot()
+            snapshot.apply(TelemetryPatch(
+                remainingTime: .available(minutes: 5994, isCapped: true)
+            ))
+            try expectEqual(snapshot.remainingTimeMinutes, 5994)
+            try expectEqual(snapshot.remainingTimeIsCapped, true)
+
+            snapshot.apply(TelemetryPatch(remainingTime: .unavailable(raw: 0)))
+            try expectNil(snapshot.remainingTimeMinutes)
+            try expectEqual(snapshot.remainingTimeIsCapped, false)
         }),
     ]
 }

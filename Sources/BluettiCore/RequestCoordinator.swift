@@ -54,9 +54,13 @@ public struct RequestCoordinator: Sendable {
     }
 
     public mutating func expireIfNeeded(now: TimeInterval) -> Bool {
-        guard let pending, now >= pending.deadline else { return false }
+        expiredReadIfNeeded(now: now) != nil
+    }
+
+    public mutating func expiredReadIfNeeded(now: TimeInterval) -> ModbusRead? {
+        guard let pending, now >= pending.deadline else { return nil }
         self.pending = nil
-        return true
+        return pending.read
     }
 
     public mutating func reset() {

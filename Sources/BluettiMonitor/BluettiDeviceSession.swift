@@ -12,6 +12,9 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
     private var powerDetector = PowerStateDetector()
     private let timing = MonitoringTiming()
     private let logger = Logger(subsystem: "com.dmitry.bluetti-monitor", category: "Session")
+    private var remainingTimeReadSafety: RuntimeProbeSafety
+    private var remainingTimeGate = RemainingTimePhaseGate()
+    private let runtimeProbeLoggingEnabled: Bool
 
     private var activeEpoch: UInt64 = 0
     private var monitorTask: Task<Void, Never>?
@@ -23,9 +26,18 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
     private var readinessAnnounced = false
     private var freshness: DataFreshness = .lost
 
-    init(central: BluetoothCentral, model: AppModel) {
+    init(
+        central: BluetoothCentral,
+        model: AppModel,
+        runtimeProbeEnabled: Bool = false
+    ) {
         self.central = central
         self.model = model
+        remainingTimeReadSafety = RuntimeProbeSafety(
+            enabled: true,
+            probeRead: PR100V2TelemetryDecoder.remainingTime
+        )
+        runtimeProbeLoggingEnabled = runtimeProbeEnabled
         central.events = self
     }
 
@@ -65,6 +77,7 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
         frameStream = V2FrameStream()
         coordinator.reset()
         powerDetector.reset()
+        remainingTimeGate = RemainingTimePhaseGate()
         freshness = .lost
         model?.resetForDeviceChange()
     }
@@ -130,6 +143,7 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
         frameStream = V2FrameStream(encryptedHeader: .fixedIV)
         coordinator.reset()
         powerDetector.beginMonitoringSession()
+        remainingTimeGate = RemainingTimePhaseGate()
         model?.beginMonitoringSession()
         readinessAnnounced = false
         freshness = .lost
@@ -169,8 +183,62 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
         let pendingRead = coordinator.pendingRead
         let plaintext = try V2Crypto.decrypt(envelope, key: secureKey)
         let now = ProcessInfo.processInfo.systemUptime
-        let patch = try coordinator.receive(plaintext, epoch: epoch, now: now)
-        model?.apply(patch)
+        let patch: TelemetryPatch
+        do {
+            patch = try coordinator.receive(plaintext, epoch: epoch, now: now)
+        } catch {
+            let probeFailure: RuntimeProbeFailure?
+            if error as? RequestCoordinatorError == .timedOut {
+                probeFailure = .timedOut
+            } else if let modbusError = error as? ModbusError,
+                      case let .exception(code) = modbusError
+            {
+                probeFailure = .modbusException(code)
+            } else {
+                probeFailure = nil
+            }
+
+            switch probeFailure.map({ remainingTimeReadSafety.handle($0, pendingRead: pendingRead) }) {
+            case .disableAndReconnect:
+                telemetryQueue.removeAll { $0 == PR100V2TelemetryDecoder.remainingTime }
+                logger.error("Remaining-time read disabled reason=late_response pending_address=\(pendingRead?.startAddress ?? 0) action=reconnect_protocol_barrier")
+                endMonitoring()
+                central.reconnectImmediately()
+                return
+            case .disableAndContinue:
+                telemetryQueue.removeAll { $0 == PR100V2TelemetryDecoder.remainingTime }
+                model?.clearRemainingTime()
+                logger.error("Remaining-time read disabled reason=modbus_exception pending_address=\(pendingRead?.startAddress ?? 0)")
+                return
+            case .propagate, .none:
+                throw error
+            }
+        }
+        if let watts = patch.dcInputPower {
+            remainingTimeGate.observeDCInputPower(watts, at: now)
+        }
+        if let watts = patch.acOutputPower {
+            remainingTimeGate.observeACOutputPower(watts, at: now)
+        }
+        if let watts = patch.dcOutputPower {
+            remainingTimeGate.observeDCOutputPower(watts, at: now)
+        }
+
+        if let remainingTime = patch.remainingTime {
+            logRuntimeProbe(remainingTime, at: Date())
+            if let accepted = remainingTimeGate.accept(remainingTime, at: now) {
+                model?.apply(TelemetryPatch(remainingTime: accepted))
+            } else {
+                model?.clearRemainingTime()
+            }
+        } else {
+            model?.apply(patch)
+            if (patch.dcInputPower != nil || patch.acOutputPower != nil || patch.dcOutputPower != nil),
+               !remainingTimeGate.hasFreshAcceptedRuntime(at: now)
+            {
+                model?.clearRemainingTime()
+            }
+        }
 
         if pendingRead == PR100V2TelemetryDecoder.acInputVoltage,
            let voltage = patch.acInputVoltage
@@ -183,7 +251,15 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
                 central.markMonitoringReady(epoch: epoch)
                 model?.monitoringReady()
             }
-            if let transition = powerDetector.observe(voltage: voltage) {
+            let previousSessionState = powerDetector.currentSessionConfirmedState
+            let transition = powerDetector.observe(voltage: voltage)
+            if let state = powerDetector.currentSessionConfirmedState,
+               state != previousSessionState
+            {
+                remainingTimeGate.beginPowerPhase(state, at: now)
+                model?.clearRemainingTime()
+            }
+            if let transition {
                 logger.notice("Power transition: \(String(describing: transition), privacy: .public)")
                 model?.handle(transition)
             } else if let state = powerDetector.currentSessionConfirmedState {
@@ -195,6 +271,10 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
             logger.info("AC input \(watts) W")
         } else if let watts = patch.acOutputPower {
             logger.info("AC output \(watts) W")
+        } else if let watts = patch.dcInputPower {
+            logger.info("DC input \(watts) W")
+        } else if let watts = patch.dcOutputPower {
+            logger.info("DC output \(watts) W")
         }
     }
 
@@ -209,7 +289,15 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
             PR100V2TelemetryDecoder.batteryPercent,
             PR100V2TelemetryDecoder.acInputPower,
             PR100V2TelemetryDecoder.acOutputPower,
+            PR100V2TelemetryDecoder.dcInputPower,
+            PR100V2TelemetryDecoder.dcOutputPower,
         ]
+        if remainingTimeReadSafety.isEnabled {
+            telemetryQueue.append(PR100V2TelemetryDecoder.remainingTime)
+            if runtimeProbeLoggingEnabled {
+                logger.notice("RUNTIME_PROBE enabled register=104 quantity=1 unit=minutes")
+            }
+        }
         monitorTask?.cancel()
         monitorTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -223,7 +311,13 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
         guard handshake.state == .ready else { return }
         let now = ProcessInfo.processInfo.systemUptime
 
-        if coordinator.expireIfNeeded(now: now) {
+        if let expiredRead = coordinator.expiredReadIfNeeded(now: now) {
+            if remainingTimeReadSafety.handle(.timedOut, pendingRead: expiredRead) == .disableAndReconnect {
+                logger.error("Remaining-time read disabled reason=timeout pending_address=\(expiredRead.startAddress) action=reconnect_protocol_barrier")
+                endMonitoring()
+                central.reconnectImmediately()
+                return
+            }
             model?.noteError(.deviceDidNotRespond)
         }
 
@@ -235,6 +329,12 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
                 failSession(.deviceStoppedResponding)
                 return
             }
+        }
+
+        if model?.snapshot.remainingTimeMinutes != nil,
+           !remainingTimeGate.hasFreshAcceptedRuntime(at: now)
+        {
+            model?.clearRemainingTime()
         }
 
         guard !coordinator.isBusy else { return }
@@ -249,7 +349,12 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
                 PR100V2TelemetryDecoder.batteryPercent,
                 PR100V2TelemetryDecoder.acInputPower,
                 PR100V2TelemetryDecoder.acOutputPower,
+                PR100V2TelemetryDecoder.dcInputPower,
+                PR100V2TelemetryDecoder.dcOutputPower,
             ])
+            if remainingTimeReadSafety.isEnabled {
+                telemetryQueue.append(PR100V2TelemetryDecoder.remainingTime)
+            }
         }
         if !telemetryQueue.isEmpty {
             send(telemetryQueue.removeFirst(), now: now)
@@ -281,9 +386,39 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
         return next
     }
 
+    private func logRuntimeProbe(_ reading: RemainingTimeUpdate, at date: Date) {
+        guard runtimeProbeLoggingEnabled else { return }
+        let snapshot = model?.snapshot
+        let record: [String: Any] = [
+            "event": "runtime_probe",
+            "timestamp": ISO8601DateFormatter().string(from: date),
+            "register": 104,
+            "raw": reading.rawValue,
+            "unit": "minutes",
+            "is_capped": reading == .available(minutes: 5994, isCapped: true),
+            "battery_percent": snapshot?.batteryPercent ?? NSNull(),
+            "ac_input_power_w": snapshot?.acInputPower ?? NSNull(),
+            "ac_output_power_w": snapshot?.acOutputPower ?? NSNull(),
+            "dc_input_power_w": snapshot?.dcInputPower ?? NSNull(),
+            "dc_output_power_w": snapshot?.dcOutputPower ?? NSNull(),
+            "ac_input_voltage_v": snapshot?.acInputVoltage ?? NSNull(),
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]),
+           let json = String(data: data, encoding: .utf8)
+        {
+            logger.notice("RUNTIME_PROBE \(json, privacy: .public)")
+        } else {
+            logger.notice("RUNTIME_PROBE register=104 raw=\(reading.rawValue)")
+        }
+    }
+
     private func setFreshness(_ value: DataFreshness) {
         guard value != freshness else { return }
         freshness = value
+        if value != .fresh {
+            remainingTimeGate.invalidateTelemetry()
+            model?.clearRemainingTime()
+        }
         model?.setFreshness(value)
     }
 
@@ -304,6 +439,8 @@ final class BluettiDeviceSession: BluetoothCentralEvents {
         monitorTask = nil
         coordinator.reset()
         frameStream.reset()
+        remainingTimeGate.invalidateTelemetry()
+        model?.clearRemainingTime()
         handshakeReadyAt = nil
         lastVoltageAt = nil
         telemetryQueue.removeAll(keepingCapacity: true)

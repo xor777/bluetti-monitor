@@ -41,6 +41,8 @@
 "accessibility.previousValue" = "Previously %@";
 "accessibility.watts" = "%lld watts";
 "accessibility.lastValue" = "Last value %@";
+"accessibility.remainingTimeEstimate" = "Station remaining-time estimate";
+"accessibility.remainingTimeValue" = "About %@ at current load";
 "accessibility.bluettiState" = "BLUETTI status";
 "accessibility.menuBarStatus" = "Bluetti Monitor, %@";
 "menuBar.tooltip" = "Bluetti Monitor · %@";
@@ -67,6 +69,10 @@
 "energy.output" = "OUTPUT";
 "energy.voltage" = "%@ V";
 "energy.watts.short" = "W";
+"runtime.estimate.hours" = "About %lld h";
+"runtime.estimate.hoursMinutes" = "About %lld h %lld min";
+"runtime.estimate.minutes" = "About %lld min";
+"runtime.atCurrentLoad" = "at current load";
 "grid.noData" = "No grid data";
 "grid.lastState" = "Last grid state";
 "grid.checking" = "Checking grid power";

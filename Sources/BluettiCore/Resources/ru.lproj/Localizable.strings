@@ -41,6 +41,8 @@
 "accessibility.previousValue" = "Ранее %@";
 "accessibility.watts" = "%lld ватт";
 "accessibility.lastValue" = "Последнее значение %@";
+"accessibility.remainingTimeEstimate" = "Оценка оставшегося времени станции";
+"accessibility.remainingTimeValue" = "Около %@ при текущей нагрузке";
 "accessibility.bluettiState" = "Состояние BLUETTI";
 "accessibility.menuBarStatus" = "Bluetti Monitor, %@";
 "menuBar.tooltip" = "Bluetti Monitor · %@";
@@ -67,6 +69,10 @@
 "energy.output" = "ВЫХОД";
 "energy.voltage" = "%@ В";
 "energy.watts.short" = "Вт";
+"runtime.estimate.hours" = "≈%lld ч";
+"runtime.estimate.hoursMinutes" = "≈%lld ч %lld мин";
+"runtime.estimate.minutes" = "≈%lld мин";
+"runtime.atCurrentLoad" = "при текущей нагрузке";
 "grid.noData" = "Нет данных о сети";
 "grid.lastState" = "Последнее состояние сети";
 "grid.checking" = "Проверяем сеть";

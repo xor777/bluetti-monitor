@@ -40,6 +40,15 @@ func requestCoordinatorTests() -> [TestCase] {
                 try coordinator.receive(response, epoch: 8, now: 11.6)
             }
         }),
+        ("expiration identifies the read that needs a protocol barrier", {
+            var coordinator = RequestCoordinator(timeout: 1.5)
+            let runtime = ModbusRead(startAddress: 104, quantity: 1)
+            _ = try coordinator.begin(runtime, epoch: 8, now: 10)
+
+            try expectNil(coordinator.expiredReadIfNeeded(now: 11.49))
+            try expectEqual(coordinator.expiredReadIfNeeded(now: 11.5), runtime)
+            try expectNil(coordinator.expiredReadIfNeeded(now: 11.6))
+        }),
         ("reset drops pending request after disconnect", {
             var coordinator = RequestCoordinator(timeout: 1.5)
             _ = try coordinator.begin(.init(startAddress: 102, quantity: 1), epoch: 8, now: 10)

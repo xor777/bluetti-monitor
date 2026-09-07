@@ -8,6 +8,7 @@ When mains power goes out, the power station keeps the Mac running so smoothly t
 
 - external power status and input voltage;
 - battery charge;
+- the station-reported remaining discharge time while running on battery under load and not charging;
 - current input and output power;
 - connection and data freshness;
 - an orange battery warning at 20% or below, and a red warning at 10% or below;

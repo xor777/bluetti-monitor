@@ -32,12 +32,17 @@ struct EnergyFlowView: View {
                 }
             }
 
-            ChargeBattery(
-                percent: currentBatteryPercent,
-                color: batteryColor,
-                isLive: batteryIsLive
-            )
-            .frame(height: 22)
+            VStack(alignment: .leading, spacing: 4) {
+                ChargeBattery(
+                    percent: currentBatteryPercent,
+                    color: batteryColor,
+                    isLive: batteryIsLive
+                )
+                .frame(height: 22)
+
+                remainingTimeRow
+                    .frame(height: 15, alignment: .leading)
+            }
 
             HStack(spacing: 7) {
                 Image(systemName: powerSymbol)
@@ -116,6 +121,72 @@ struct EnergyFlowView: View {
         if percent <= 10 { return .red }
         if percent <= 20 { return MonitorStyle.batteryWarning }
         return MonitorStyle.accent
+    }
+
+    @ViewBuilder
+    private var remainingTimeRow: some View {
+        if let text = remainingTimeText,
+           let accessibilityValue = remainingTimeAccessibilityValue
+        {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(text)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary.opacity(0.82))
+
+                Text(localizer.text("runtime.atCurrentLoad"))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(localizer.text("accessibility.remainingTimeEstimate"))
+            .accessibilityValue(accessibilityValue)
+        }
+    }
+
+    private var visibleRemainingTimeMinutes: Int? {
+        guard telemetryIsLive,
+              powerConfirmedInCurrentSession,
+              power == .offline,
+              !snapshot.remainingTimeIsCapped,
+              let minutes = snapshot.remainingTimeMinutes,
+              minutes > 0
+        else {
+            return nil
+        }
+        return minutes
+    }
+
+    private var remainingTimeText: String? {
+        guard let minutes = visibleRemainingTimeMinutes else { return nil }
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        if hours == 0 {
+            return localizer.format("runtime.estimate.minutes", Int64(remainingMinutes))
+        }
+        if remainingMinutes == 0 {
+            return localizer.format("runtime.estimate.hours", Int64(hours))
+        }
+        return localizer.format(
+            "runtime.estimate.hoursMinutes",
+            Int64(hours),
+            Int64(remainingMinutes)
+        )
+    }
+
+    private var remainingTimeAccessibilityValue: String? {
+        guard let minutes = visibleRemainingTimeMinutes else { return nil }
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        let duration: String
+        if hours == 0 {
+            duration = localizer.minutes(remainingMinutes)
+        } else if remainingMinutes == 0 {
+            duration = localizer.hours(hours)
+        } else {
+            duration = "\(localizer.hours(hours)) \(localizer.minutes(remainingMinutes))"
+        }
+        return localizer.format("accessibility.remainingTimeValue", duration)
     }
 
     private var powerLabel: String {

@@ -26,7 +26,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             )
         )
         let central = BluetoothCentral()
-        session = BluettiDeviceSession(central: central, model: model)
+        session = BluettiDeviceSession(
+            central: central,
+            model: model,
+            runtimeProbeEnabled: CommandLine.arguments.contains("--runtime-probe")
+        )
         model.reconnectAction = { [weak session] in session?.reconnect() }
         model.openBluetoothPrivacySettingsAction = { [weak central] in
             central?.openBluetoothPrivacySettings()

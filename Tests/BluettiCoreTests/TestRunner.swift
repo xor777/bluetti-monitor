@@ -18,6 +18,8 @@ enum TestRunner {
             + v2FrameStreamTests()
             + v2HandshakeTests()
             + requestCoordinatorTests()
+            + runtimeProbeSafetyTests()
+            + remainingTimePhaseGateTests()
             + statusPresentationTests()
             + menuBarPresentationTests()
 

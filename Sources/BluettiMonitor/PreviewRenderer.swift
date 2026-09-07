@@ -402,7 +402,10 @@ private struct PreviewFixture {
                         batteryPercent: 8,
                         acInputVoltage: 0,
                         acInputPower: 0,
-                        acOutputPower: 412
+                        acOutputPower: 412,
+                        dcInputPower: 0,
+                        dcOutputPower: 0,
+                        remainingTimeMinutes: 12
                     ),
                     batteryState: .warning,
                     outageStartedAt: now.addingTimeInterval(-26 * 60)
@@ -436,9 +439,127 @@ private struct PreviewFixture {
                         batteryPercent: 63,
                         acInputVoltage: 0,
                         acInputPower: 0,
-                        acOutputPower: 128
+                        acOutputPower: 128,
+                        dcInputPower: 0,
+                        dcOutputPower: 0
                     ),
                     outageStartedAt: now.addingTimeInterval(-9 * 60)
+                )
+            ),
+            PreviewFixture(
+                name: "runtime-live-example",
+                state: make(
+                    power: .offline,
+                    snapshot: DeviceSnapshot(
+                        model: "PR100V2",
+                        batteryPercent: 100,
+                        acInputVoltage: 0,
+                        acInputPower: 0,
+                        acOutputPower: 105,
+                        dcInputPower: 0,
+                        dcOutputPower: 0,
+                        remainingTimeMinutes: 666
+                    ),
+                    outageStartedAt: now.addingTimeInterval(-3 * 60)
+                )
+            ),
+            PreviewFixture(
+                name: "runtime-under-hour",
+                state: make(
+                    power: .offline,
+                    snapshot: DeviceSnapshot(
+                        model: "PR100V2",
+                        batteryPercent: 46,
+                        acInputVoltage: 0,
+                        acInputPower: 0,
+                        acOutputPower: 620,
+                        dcInputPower: 0,
+                        dcOutputPower: 0,
+                        remainingTimeMinutes: 42
+                    ),
+                    outageStartedAt: now.addingTimeInterval(-3 * 60)
+                )
+            ),
+            PreviewFixture(
+                name: "runtime-unknown",
+                state: make(
+                    power: .offline,
+                    snapshot: DeviceSnapshot(
+                        model: "PR100V2",
+                        batteryPercent: 61,
+                        acInputVoltage: 0,
+                        acInputPower: 0,
+                        acOutputPower: 105,
+                        dcInputPower: 0,
+                        dcOutputPower: 0
+                    )
+                )
+            ),
+            PreviewFixture(
+                name: "runtime-stale",
+                state: make(
+                    power: .offline,
+                    freshness: .stale,
+                    snapshot: DeviceSnapshot(
+                        model: "PR100V2",
+                        batteryPercent: 60,
+                        acInputVoltage: 0,
+                        acInputPower: 0,
+                        acOutputPower: 105,
+                        dcInputPower: 0,
+                        dcOutputPower: 0,
+                        remainingTimeMinutes: 666
+                    ),
+                    batteryState: .unavailable,
+                    lastUpdateAge: 18
+                )
+            ),
+            PreviewFixture(
+                name: "runtime-no-load",
+                state: make(
+                    power: .offline,
+                    snapshot: DeviceSnapshot(
+                        model: "PR100V2",
+                        batteryPercent: 61,
+                        acInputVoltage: 0,
+                        acInputPower: 0,
+                        acOutputPower: 0,
+                        dcInputPower: 0,
+                        dcOutputPower: 0
+                    )
+                )
+            ),
+            PreviewFixture(
+                name: "runtime-capped",
+                state: make(
+                    power: .offline,
+                    snapshot: DeviceSnapshot(
+                        model: "PR100V2",
+                        batteryPercent: 99,
+                        acInputVoltage: 0,
+                        acInputPower: 0,
+                        acOutputPower: 4,
+                        dcInputPower: 0,
+                        dcOutputPower: 0,
+                        remainingTimeMinutes: 5994,
+                        remainingTimeIsCapped: true
+                    )
+                )
+            ),
+            PreviewFixture(
+                name: "runtime-online-capped",
+                state: make(
+                    snapshot: DeviceSnapshot(
+                        model: "PR100V2",
+                        batteryPercent: 100,
+                        acInputVoltage: 230,
+                        acInputPower: 122,
+                        acOutputPower: 105,
+                        dcInputPower: 0,
+                        dcOutputPower: 0,
+                        remainingTimeMinutes: 5994,
+                        remainingTimeIsCapped: true
+                    )
                 )
             ),
             PreviewFixture(
