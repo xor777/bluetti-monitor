@@ -33,7 +33,7 @@ The current build requires macOS 13 or newer and an Apple silicon Mac. It is ad-
 
 Keep the official BLUETTI mobile app disconnected while using Bluetti Monitor. The station may allow only one active Bluetooth connection.
 
-To switch stations later, open the menu in the top-right corner of the popover and choose **Change device…**. The chooser shows a stable Bluetooth identity so identical model names can be distinguished.
+To switch stations later, open **Settings…** from the menu in the top-right corner of the popover, then choose **Change…** in the **Device** section. The chooser shows a stable Bluetooth identity so identical model names can be distinguished.
 
 ## Privacy
 
